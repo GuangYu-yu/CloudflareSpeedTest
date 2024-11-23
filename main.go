@@ -159,13 +159,28 @@ func main() {
 	var allPingData utils.PingDelaySet
 	hasMore := true
 
-	for hasMore {
-		// 开始延迟测速 + 过滤延迟/丢包
+	// 显示测速模式和参数
+	mode := "TCP"
+	if task.Httping {
+		mode = "HTTP"
+	}
+	fmt.Printf("开始延迟测速（模式：%s, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f)\n", 
+		mode,
+		task.TCPPort, 
+		utils.InputMinDelay.Milliseconds(), 
+		utils.InputMaxDelay.Milliseconds(), 
+		utils.InputMaxLossRate,
+	)
+	
+	targetCount := 10000 // 设置目标可用IP数量
+	
+	// 第一阶段：完成所有延迟测试直到达到目标数量
+	for hasMore && len(allPingData) < targetCount {
 		pingData, more := ping.RunBatch()
 		hasMore = more
 		
 		// 过滤并添加到总结果中
-		 filteredData := pingData.FilterDelay().FilterLossRate()
+		filteredData := pingData.FilterDelay().FilterLossRate()
 		allPingData = append(allPingData, filteredData...)
 	}
 
