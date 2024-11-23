@@ -35,38 +35,38 @@ jobs:
           # Linux  
           # AMD64  
           env GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o binaries/linux/amd64/CloudflareST
-          cp binaries/linux/amd64/CloudflareST build/CloudflareST_linux_amd64
+          cp binaries/linux/amd64/CloudflareST build/CloudflareST
           # 386  
           env GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o binaries/linux/386/CloudflareST
-          cp binaries/linux/386/CloudflareST build/CloudflareST_linux_386
+          cp binaries/linux/386/CloudflareST build/CloudflareST
           # ARM64  
           env GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o binaries/linux/arm64/CloudflareST
-          cp binaries/linux/arm64/CloudflareST build/CloudflareST_linux_arm64
+          cp binaries/linux/arm64/CloudflareST build/CloudflareST
           # ARM  
           env GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o binaries/linux/arm/CloudflareST
-          cp binaries/linux/arm/CloudflareST build/CloudflareST_linux_arm
+          cp binaries/linux/arm/CloudflareST build/CloudflareST
           # MIPS  
           env GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags="-s -w" -o binaries/linux/mips/CloudflareST
-          cp binaries/linux/mips/CloudflareST build/CloudflareST_linux_mips
+          cp binaries/linux/mips/CloudflareST build/CloudflareST
           # MIPSLE  
           env GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags="-s -w" -o binaries/linux/mipsle/CloudflareST
-          cp binaries/linux/mipsle/CloudflareST build/CloudflareST_linux_mipsle
+          cp binaries/linux/mipsle/CloudflareST build/CloudflareST
 
           # Windows  
           # AMD64  
           env GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o binaries/windows/amd64/CloudflareST.exe
-          cp binaries/windows/amd64/CloudflareST.exe build/CloudflareST_windows_amd64.exe
+          cp binaries/windows/amd64/CloudflareST.exe build/CloudflareST.exe
           # 386  
           env GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o binaries/windows/386/CloudflareST.exe
-          cp binaries/windows/386/CloudflareST.exe build/CloudflareST_windows_386.exe
+          cp binaries/windows/386/CloudflareST.exe build/CloudflareST.exe
 
           # macOS  
           # AMD64  
           env GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o binaries/darwin/amd64/CloudflareST
-          cp binaries/darwin/amd64/CloudflareST build/CloudflareST_darwin_amd64
+          cp binaries/darwin/amd64/CloudflareST build/CloudflareST
           # ARM64  
           env GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o binaries/darwin/arm64/CloudflareST
-          cp binaries/darwin/arm64/CloudflareST build/CloudflareST_darwin_arm64
+          cp binaries/darwin/arm64/CloudflareST build/CloudflareST
 
           # 压缩构建产物
           cd build
