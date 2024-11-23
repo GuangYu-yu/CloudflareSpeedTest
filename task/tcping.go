@@ -17,6 +17,7 @@ const (
 	defaultRoutines   = 200
 	defaultPort       = 443
 	defaultPingTimes  = 4
+	batchSize         = 256
 )
 
 var (
@@ -79,11 +80,17 @@ func (p *Ping) RunBatch() (utils.PingDelaySet, bool) {
 		return nil, false
 	}
 
+	mode := "TCP"
 	if Httping {
-		fmt.Printf("开始延迟测速（模式：HTTP, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f)\n", TCPPort, utils.InputMinDelay.Milliseconds(), utils.InputMaxDelay.Milliseconds(), utils.InputMaxLossRate)
-	} else {
-		fmt.Printf("开始延迟测速（模式：TCP, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f)\n", TCPPort, utils.InputMinDelay.Milliseconds(), utils.InputMaxDelay.Milliseconds(), utils.InputMaxLossRate)
+		mode = "HTTP"
 	}
+	fmt.Printf("开始延迟测速（模式：%s, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f)\n",
+		mode,
+		TCPPort,
+		utils.InputMinDelay.Milliseconds(),
+		utils.InputMaxDelay.Milliseconds(),
+		utils.InputMaxLossRate,
+	)
 
 	for _, ip := range currentBatch {
 		p.wg.Add(1)
