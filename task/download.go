@@ -66,31 +66,38 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
 	}
 
 	fmt.Printf("开始下载测速（下限：%.2f MB/s, 数量：%d, 队列：%d）\n", MinSpeed, TestCount, testNum)
-	// 控制 下载测速进度条 与 延迟测速进度条 长度一致（强迫症）
-	bar_a := len(strconv.Itoa(len(ipSet)))
-	bar_b := "     "
-	for i := 0; i < bar_a; i++ {
-		bar_b += " "
-	}
-	bar := utils.NewBar(TestCount, bar_b, "")
+	bar := utils.NewBar(TestCount, "", "")
+	
+	// 创建一个通道用于接收测速结果
+	resultChan := make(chan utils.CloudflareIPData, testNum)
+	
+	// 启动测速协程
 	for i := 0; i < testNum; i++ {
-		speed := downloadHandler(ipSet[i].IP)
-		ipSet[i].DownloadSpeed = speed
-		// 在每个 IP 下载测速后，以 [下载速度下限] 条件过滤结果
-		if speed >= MinSpeed*1024*1024 {
+		go func(ip utils.CloudflareIPData) {
+			speed := downloadHandler(ip.IP)
+			ip.DownloadSpeed = speed
+			resultChan <- ip
+		}(ipSet[i])
+	}
+
+	// 实时处理结果
+	for i := 0; i < testNum; i++ {
+		result := <-resultChan
+		if result.DownloadSpeed >= MinSpeed*1024*1024 {
+			speedSet = append(speedSet, result)
+			sort.Sort(speedSet) // 实时排序
 			bar.Grow(1, "")
-			speedSet = append(speedSet, ipSet[i]) // 高于下载速度下限时，添加到新数组中
-			if len(speedSet) == TestCount {       // 凑够满足条件的 IP 时（下载测速数量 -dn），就跳出循环
+			
+			// 实时打印当前结果
+			speedSet.PrintProgress()
+			
+			if len(speedSet) == TestCount {
 				break
 			}
 		}
 	}
+	
 	bar.Done()
-	if len(speedSet) == 0 { // 没有符合速度限制的数据，返回所有测试数据
-		speedSet = utils.DownloadSpeedSet(ipSet)
-	}
-	// 按速度排序
-	sort.Sort(speedSet)
 	return
 }
 
