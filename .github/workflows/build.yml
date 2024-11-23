@@ -28,64 +28,62 @@ jobs:
         run: |  
           # 创建构建目录和存储目录
           mkdir -p build
-          mkdir -p binaries/linux/{amd64,386,arm64,arm,mips,mipsle}
-          mkdir -p binaries/windows/{amd64,386}
-          mkdir -p binaries/darwin/{amd64,arm64}
+          mkdir -p binaries
 
           # Linux  
           # AMD64  
           env GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o CloudflareST
           tar -czf build/CloudflareST_linux_amd64.tar.gz CloudflareST
-          cp CloudflareST binaries/linux/amd64/CloudflareST
+          cp CloudflareST binaries/CloudflareST_linux_amd64
           rm CloudflareST
           # 386  
           env GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o CloudflareST
           tar -czf build/CloudflareST_linux_386.tar.gz CloudflareST
-          cp CloudflareST binaries/linux/386/CloudflareST
+          cp CloudflareST binaries/CloudflareST_linux_386
           rm CloudflareST
           # ARM64  
           env GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o CloudflareST
           tar -czf build/CloudflareST_linux_arm64.tar.gz CloudflareST
-          cp CloudflareST binaries/linux/arm64/CloudflareST
+          cp CloudflareST binaries/CloudflareST_linux_arm64
           rm CloudflareST
           # ARM  
           env GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o CloudflareST
           tar -czf build/CloudflareST_linux_arm.tar.gz CloudflareST
-          cp CloudflareST binaries/linux/arm/CloudflareST
+          cp CloudflareST binaries/CloudflareST_linux_arm
           rm CloudflareST
           # MIPS  
           env GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags="-s -w" -o CloudflareST
           tar -czf build/CloudflareST_linux_mips.tar.gz CloudflareST
-          cp CloudflareST binaries/linux/mips/CloudflareST
+          cp CloudflareST binaries/CloudflareST_linux_mips
           rm CloudflareST
           # MIPSLE  
           env GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags="-s -w" -o CloudflareST
           tar -czf build/CloudflareST_linux_mipsle.tar.gz CloudflareST
-          cp CloudflareST binaries/linux/mipsle/CloudflareST
+          cp CloudflareST binaries/CloudflareST_linux_mipsle
           rm CloudflareST
 
           # Windows  
           # AMD64  
           env GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o CloudflareST.exe
           tar -czf build/CloudflareST_windows_amd64.tar.gz CloudflareST.exe
-          cp CloudflareST.exe binaries/windows/amd64/CloudflareST.exe
+          cp CloudflareST.exe binaries/CloudflareST_windows_amd64.exe
           rm CloudflareST.exe
           # 386  
           env GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o CloudflareST.exe
           tar -czf build/CloudflareST_windows_386.tar.gz CloudflareST.exe
-          cp CloudflareST.exe binaries/windows/386/CloudflareST.exe
+          cp CloudflareST.exe binaries/CloudflareST_windows_386.exe
           rm CloudflareST.exe
 
           # macOS  
           # AMD64  
           env GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o CloudflareST
           tar -czf build/CloudflareST_darwin_amd64.tar.gz CloudflareST
-          cp CloudflareST binaries/darwin/amd64/CloudflareST
+          cp CloudflareST binaries/CloudflareST_darwin_amd64
           rm CloudflareST
           # ARM64  
           env GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o CloudflareST
           tar -czf build/CloudflareST_darwin_arm64.tar.gz CloudflareST
-          cp CloudflareST binaries/darwin/arm64/CloudflareST
+          cp CloudflareST binaries/CloudflareST_darwin_arm64
           rm CloudflareST
 
       - name: 安装 UPX  
