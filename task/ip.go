@@ -162,7 +162,7 @@ func getTestCount(isIPv4 bool) int64 {
 		}
 		if V4Param != "" {
 			if count, err := parseNumParam(V4Param); err == nil {
-				if count >= 0 && count <= math.Pow(2, 16) {
+				if count >= 0 && count <= int64(math.Pow(2, 16)) {
 					return count
 				}
 			}
@@ -208,7 +208,7 @@ func getTestCount(isIPv4 bool) int64 {
 		}
 		if V6Param != "" {
 			if count, err := parseNumParam(V6Param); err == nil {
-				if count >= 0 && count <= math.Pow(2, 96) {
+				if count >= 0 && count <= int64(math.Pow(2, 96)) {
 					return count
 				}
 			}
