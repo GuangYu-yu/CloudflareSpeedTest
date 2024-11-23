@@ -11,6 +11,14 @@ jobs:
       - name: 检出代码  
         uses: actions/checkout@v4  
 
+      - name: 删除旧版本
+        uses: dev-drprasad/delete-older-releases@v0.3.2
+        with:
+          keep_latest: 0  # 设置为 0 表示删除所有旧版本
+          delete_tags: true  # 同时删除关联的标签
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 设置 Go 环境  
         uses: actions/setup-go@v4  
         with:  
@@ -18,41 +26,55 @@ jobs:
 
       - name: 构建所有平台  
         run: |  
-          mkdir -p build  
+          # 创建构建目录和存储目录
+          mkdir -p build
+          mkdir -p binaries/linux/{amd64,386,arm64,arm,mips,mipsle}
+          mkdir -p binaries/windows/{amd64,386}
+          mkdir -p binaries/darwin/{amd64,arm64}
 
           # Linux  
           # AMD64  
-          env GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/CloudflareST_linux_amd64  
+          env GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o binaries/linux/amd64/CloudflareST
+          cp binaries/linux/amd64/CloudflareST build/CloudflareST_linux_amd64
           # 386  
-          env GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o build/CloudflareST_linux_386  
+          env GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o binaries/linux/386/CloudflareST
+          cp binaries/linux/386/CloudflareST build/CloudflareST_linux_386
           # ARM64  
-          env GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o build/CloudflareST_linux_arm64  
+          env GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o binaries/linux/arm64/CloudflareST
+          cp binaries/linux/arm64/CloudflareST build/CloudflareST_linux_arm64
           # ARM  
-          env GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o build/CloudflareST_linux_arm  
+          env GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o binaries/linux/arm/CloudflareST
+          cp binaries/linux/arm/CloudflareST build/CloudflareST_linux_arm
           # MIPS  
-          env GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags="-s -w" -o build/CloudflareST_linux_mips  
+          env GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags="-s -w" -o binaries/linux/mips/CloudflareST
+          cp binaries/linux/mips/CloudflareST build/CloudflareST_linux_mips
           # MIPSLE  
-          env GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags="-s -w" -o build/CloudflareST_linux_mipsle  
+          env GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags="-s -w" -o binaries/linux/mipsle/CloudflareST
+          cp binaries/linux/mipsle/CloudflareST build/CloudflareST_linux_mipsle
 
           # Windows  
           # AMD64  
-          env GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o build/CloudflareST_windows_amd64.exe  
+          env GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o binaries/windows/amd64/CloudflareST.exe
+          cp binaries/windows/amd64/CloudflareST.exe build/CloudflareST_windows_amd64.exe
           # 386  
-          env GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o build/CloudflareST_windows_386.exe  
+          env GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o binaries/windows/386/CloudflareST.exe
+          cp binaries/windows/386/CloudflareST.exe build/CloudflareST_windows_386.exe
 
           # macOS  
           # AMD64  
-          env GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o build/CloudflareST_darwin_amd64  
+          env GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o binaries/darwin/amd64/CloudflareST
+          cp binaries/darwin/amd64/CloudflareST build/CloudflareST_darwin_amd64
           # ARM64  
-          env GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o build/CloudflareST_darwin_arm64  
+          env GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o binaries/darwin/arm64/CloudflareST
+          cp binaries/darwin/arm64/CloudflareST build/CloudflareST_darwin_arm64
 
-          # 压缩所有二进制文件  
-          cd build  
-          for file in *; do  
-            if [ -f "$file" ]; then  
-              tar -czf "${file}.tar.gz" "$file" "../ip.txt"  
-            fi  
-          done  
+          # 压缩构建产物
+          cd build
+          for file in *; do
+            if [ -f "$file" ]; then
+              tar -czf "${file}.tar.gz" "$file" "../ip.txt"
+            fi
+          done
 
       - name: 安装 UPX  
         run: |  
@@ -62,7 +84,7 @@ jobs:
       - name: 使用 UPX 压缩二进制文件  
         run: |  
           cd build  
-          for file in CloudflareST_*; do  
+          for file in CloudflareST*; do  
             if [[ ! "$file" =~ \.tar\.gz$ ]]; then  
               upx --best "$file" || true  
             fi  
@@ -72,6 +94,14 @@ jobs:
         run: |  
           cd build  
           sha256sum * > sha256sum.txt  
+
+      - name: 提交二进制文件到仓库
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add binaries/
+          git commit -m "Update binaries [skip ci]" || echo "No changes to commit"
+          git push
 
       - name: 上传构建产物  
         uses: actions/upload-artifact@v3  
