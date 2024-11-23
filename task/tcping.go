@@ -1,3 +1,4 @@
+// tcping.go
 package task
 
 import (
@@ -17,7 +18,6 @@ const (
 	defaultRoutines   = 200
 	defaultPort       = 443
 	defaultPingTimes  = 4
-	batchSize         = 256
 )
 
 var (
@@ -63,12 +63,12 @@ func NewPing() *Ping {
 }
 
 // RunBatch 运行一批测试，返回是否还有更多IP需要测试
-func (p *Ping) RunBatch() (utils.PingDelaySet, bool) {
+func (p *Ping) RunBatch(targetCount int) (utils.PingDelaySet, bool) {
 	if p.position >= len(p.ips) {
 		return nil, false
 	}
 
-	end := p.position + batchSize
+	end := p.position + targetCount
 	if end > len(p.ips) {
 		end = len(p.ips)
 	}
@@ -155,7 +155,7 @@ func (p *Ping) appendIPData(data *utils.PingData) {
 
 // handle tcping
 func (p *Ping) tcpingHandler(ip *net.IPAddr) {
-	recv, totalDlay := p.checkConnection(ip)
+	recv, totalDelay := p.checkConnection(ip)
 	nowAble := len(p.csv)
 	if recv != 0 {
 		nowAble++
@@ -168,7 +168,7 @@ func (p *Ping) tcpingHandler(ip *net.IPAddr) {
 		IP:       ip,
 		Sended:   PingTimes,
 		Received: recv,
-		Delay:    totalDlay / time.Duration(recv),
+		Delay:    totalDelay / time.Duration(recv),
 	}
 	p.appendIPData(data)
 }
