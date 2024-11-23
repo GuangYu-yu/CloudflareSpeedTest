@@ -151,58 +151,57 @@ https://github.com/XIU2/CloudflareSpeedTest
 }
 
 func main() {
-    task.InitRandSeed() // 置随机数种子
+	task.InitRandSeed() // 置随机数种子
 
-    fmt.Printf("# XIU2/CloudflareSpeedTest %s \n\n", version)
+	fmt.Printf("# XIU2/CloudflareSpeedTest %s \n\n", version)
 
-    ping := task.NewPing()
-    var allPingData utils.PingDelaySet
-    hasMore := true
-    
-    targetCount := 10000 // 设置目标可用IP数量
-    
-    // 第一阶段：完成所有延迟测试直到达到目标数量
-    for hasMore && len(allPingData) < targetCount {
-        pingData, more := ping.RunBatch(targetCount)
-        hasMore = more
-        
-        // 过滤并添加到总结果中
-        filteredData := pingData.FilterDelay().FilterLossRate()
-        allPingData = append(allPingData, filteredData...)
-    }
+	ping := task.NewPing()
+	var allPingData utils.PingDelaySet
+	hasMore := true
+	
+	targetCount := 10000 // 设置目标可用IP数量
+	
+	// 第一阶段：完成所有延迟测试直到达到目标数量
+	for hasMore && len(allPingData) < targetCount {
+		pingData, more := ping.RunBatch(targetCount)
+		hasMore = more
+		
+		// 过滤并添加到总结果中
+		filteredData := pingData.FilterDelay().FilterLossRate()
+		allPingData = append(allPingData, filteredData...)
 
-    // 按延迟排序
-    sort.Sort(allPingData)
-    
-    // 确保 allPingData 的长度至少为 task.TestCount
-    if len(allPingData) < task.TestCount {
-        fmt.Printf("可用 IP 数量不足 %d 个，无法进行下载测速。\n", task.TestCount)
-        return
-    }
+		// 如果达到目标可用IP数量，跳出循环
+		if len(allPingData) >= targetCount {
+			break
+		}
+	}
 
-    // 如果禁用了下载测速
-    if task.Disable {
-        utils.ExportCsv(utils.DownloadSpeedSet(allPingData)) // 输出结果
-        allPingData.Print()                                  // 打印结果
-    } else {
-        // 取前 task.TestCount 个 IP 进行下载测速
-        testCount := task.TestCount
-        if testCount > len(allPingData) {
-            testCount = len(allPingData)
-        }
-        speedData := task.TestDownloadSpeed(allPingData[:testCount])
-        
-        // 按下载速度排序
-        sort.Sort(speedData)
-        
-        utils.ExportCsv(speedData) // 输出结果
-        speedData.Print()          // 打印结果
-    }
+	// 按延迟排序
+	sort.Sort(allPingData)
+	
+	// 如果禁用了下载测速
+	if task.Disable {
+		utils.ExportCsv(utils.DownloadSpeedSet(allPingData)) // 输出结果
+		allPingData.Print()                                  // 打印结果
+	} else {
+		// 取前 task.TestCount 个 IP 进行下载测速
+		testCount := task.TestCount
+		if testCount > len(allPingData) {
+			testCount = len(allPingData)
+		}
+		speedData := task.TestDownloadSpeed(allPingData[:testCount])
+		
+		// 按下载速度排序
+		sort.Sort(speedData)
+		
+		utils.ExportCsv(speedData) // 输出结果
+		speedData.Print()          // 打印结果
+	}
 
-    if versionNew != "" {
-        fmt.Printf("\n*** 发现新版本 [%s]！请前往 [https://github.com/XIU2/CloudflareSpeedTest] 更新！ ***\n", versionNew)
-    }
-    endPrint()
+	if versionNew != "" {
+		fmt.Printf("\n*** 发现新版本 [%s]！请前往 [https://github.com/XIU2/CloudflareSpeedTest] 更新！ ***\n", versionNew)
+	}
+	endPrint()
 }
 
 func endPrint() {
