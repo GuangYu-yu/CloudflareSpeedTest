@@ -3,6 +3,7 @@ package task
 import (
 	"bufio"
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"os"
@@ -14,11 +15,25 @@ import (
 const defaultInputFile = "ip.txt"
 
 var (
-	// TestAll test all ip
-	TestAll = false
+	// TestAll4 test all ip
+	TestAll4 = false
 	// IPFile is the filename of IP Rangs
 	IPFile = defaultInputFile
 	IPText string
+	// More6 -more6 parameter
+	More6 = false
+	// Lots6 -lots6 parameter
+	Lots6 = false
+	// Many6 -many6 parameter
+	Many6 = false
+	// Some6 -some6 parameter
+	Some6 = false
+	// Many4 -many4 parameter
+	Many4 = false
+	// V4Param -v4 parameter
+	V4Param = ""
+	// V6Param -v6 parameter
+	V6Param = ""
 )
 
 func InitRandSeed() {
@@ -99,20 +114,142 @@ func (r *IPRanges) getIPRange() (minIP, hosts byte) {
 	return
 }
 
+// 解析类似 "8-5" 或 "9" 这样的参数
+func parseNumParam(param string) (int64, error) {
+	if param == "" {
+		return 0, nil
+	}
+	
+	var base, offset int64
+	var err error
+	
+	// 检查是否包含加减符号
+	if idx := strings.IndexAny(param, "+-"); idx != -1 {
+		base, err = strconv.ParseInt(param[:idx], 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		offset, err = strconv.ParseInt(param[idx:], 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		return int64(math.Pow(2, float64(base))) + offset, nil
+	}
+	
+	// 单个数字的情况
+	base, err = strconv.ParseInt(param, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return int64(math.Pow(2, float64(base))), nil
+}
+
+// 获取应该测试的 IP 数量，仅当指定了相应参数时才返回具体数量，否则返回 0 表示使用默认随机逻辑
+func getTestCount(isIPv4 bool) int64 {
+	if isIPv4 {
+		// 处理 IPv4 的情况
+		if TestAll4 {
+			return math.MaxInt64
+		}
+		if Many4 {
+			v4Count, _ := parseNumParam("12")
+			if V4Param != "" {
+				if count, err := parseNumParam(V4Param); err == nil && count < v4Count {
+					return count
+				}
+			}
+			return v4Count
+		}
+		if V4Param != "" {
+			if count, err := parseNumParam(V4Param); err == nil {
+				if count >= 0 && count <= math.Pow(2, 16) {
+					return count
+				}
+			}
+		}
+		return 0 // 返回 0 表示使用默认随机逻辑
+	} else {
+		// 处理 IPv6 的情况
+		if More6 {
+			v6Count, _ := parseNumParam("18")
+			if V6Param != "" {
+				if count, err := parseNumParam(V6Param); err == nil && count < v6Count {
+					return count
+				}
+			}
+			return v6Count
+		}
+		if Lots6 {
+			v6Count, _ := parseNumParam("16")
+			if V6Param != "" {
+				if count, err := parseNumParam(V6Param); err == nil && count < v6Count {
+					return count
+				}
+			}
+			return v6Count
+		}
+		if Many6 {
+			v6Count, _ := parseNumParam("12")
+			if V6Param != "" {
+				if count, err := parseNumParam(V6Param); err == nil && count < v6Count {
+					return count
+				}
+			}
+			return v6Count
+		}
+		if Some6 {
+			v6Count, _ := parseNumParam("8")
+			if V6Param != "" {
+				if count, err := parseNumParam(V6Param); err == nil && count < v6Count {
+					return count
+				}
+			}
+			return v6Count
+		}
+		if V6Param != "" {
+			if count, err := parseNumParam(V6Param); err == nil {
+				if count >= 0 && count <= math.Pow(2, 96) {
+					return count
+				}
+			}
+		}
+		return 0 // 返回 0 表示使用默认随机逻辑
+	}
+}
+
 func (r *IPRanges) chooseIPv4() {
 	if r.mask == "/32" { // 单个 IP 则无需随机，直接加入自身即可
 		r.appendIP(r.firstIP)
-	} else {
-		minIP, hosts := r.getIPRange()    // 返回第四段 IP 的最小值及可用数目
-		for r.ipNet.Contains(r.firstIP) { // 只要该 IP 没有超出 IP 网段范围，就继续循环随机
-			if TestAll { // 如果是测速全部 IP
-				for i := 0; i <= int(hosts); i++ { // 遍历 IP 最后一段最小值到最大值
-					r.appendIPv4(byte(i) + minIP)
-				}
-			} else { // 随机 IP 的最后一段 0.0.0.X
-				r.appendIPv4(minIP + randIPEndWith(hosts))
+		return
+	}
+	
+	minIP, hosts := r.getIPRange()
+	targetCount := getTestCount(true)
+	
+	if targetCount > 0 {
+		// 使用指定的数量
+		if targetCount >= int64(hosts)+1 {
+			// 如果目标数量大于等于可用IP数量，测试所有IP
+			for i := 0; i <= int(hosts); i++ {
+				r.appendIPv4(byte(i) + minIP)
 			}
-			r.firstIP[14]++ // 0.0.(X+1).X
+			return
+		}
+		
+		// 随机选择不重复的IP
+		used := make(map[byte]bool)
+		for int64(len(used)) < targetCount {
+			ip := minIP + randIPEndWith(hosts)
+			if !used[ip] {
+				used[ip] = true
+				r.appendIPv4(ip)
+			}
+		}
+	} else {
+		// 使用原有的随机逻辑
+		for r.ipNet.Contains(r.firstIP) {
+			r.appendIPv4(minIP + randIPEndWith(hosts))
+			r.firstIP[14]++
 			if r.firstIP[14] == 0 {
 				r.firstIP[13]++ // 0.(X+1).X.X
 				if r.firstIP[13] == 0 {
@@ -126,6 +263,30 @@ func (r *IPRanges) chooseIPv4() {
 func (r *IPRanges) chooseIPv6() {
 	if r.mask == "/128" { // 单个 IP 则无需随机，直接加入自身即可
 		r.appendIP(r.firstIP)
+		return
+	}
+	
+	targetCount := getTestCount(false)
+	
+	if targetCount > 0 {
+		// 使用指定的数量
+		used := make(map[string]bool)
+		for int64(len(used)) < targetCount {
+			newIP := make([]byte, len(r.firstIP))
+			copy(newIP, r.firstIP)
+			
+			for i := len(newIP)-1; i >= 0; i-- {
+				newIP[i] = byte(rand.Intn(256))
+				if r.ipNet.Contains(newIP) {
+					ipStr := net.IP(newIP).String()
+					if !used[ipStr] {
+						used[ipStr] = true
+						r.appendIP(newIP)
+						break
+					}
+				}
+			}
+		}
 	} else {
 		var tempIP uint8                  // 临时变量，用于记录前一位的值
 		for r.ipNet.Contains(r.firstIP) { // 只要该 IP 没有超出 IP 网段范围，就继续循环随机
