@@ -20,7 +20,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 设置 Go 环境  
-        uses: actions/setup-go@v4  
+        uses: actions/setup-go@v5
         with:  
           go-version: '1.16'  
 
@@ -34,47 +34,59 @@ jobs:
 
           # Linux  
           # AMD64  
-          env GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o binaries/linux/amd64/CloudflareST
-          cp binaries/linux/amd64/CloudflareST build/CloudflareST
+          env GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o CloudflareST
+          tar -czf build/CloudflareST_linux_amd64.tar.gz CloudflareST
+          cp CloudflareST binaries/linux/amd64/CloudflareST
+          rm CloudflareST
           # 386  
-          env GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o binaries/linux/386/CloudflareST
-          cp binaries/linux/386/CloudflareST build/CloudflareST
+          env GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o CloudflareST
+          tar -czf build/CloudflareST_linux_386.tar.gz CloudflareST
+          cp CloudflareST binaries/linux/386/CloudflareST
+          rm CloudflareST
           # ARM64  
-          env GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o binaries/linux/arm64/CloudflareST
-          cp binaries/linux/arm64/CloudflareST build/CloudflareST
+          env GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o CloudflareST
+          tar -czf build/CloudflareST_linux_arm64.tar.gz CloudflareST
+          cp CloudflareST binaries/linux/arm64/CloudflareST
+          rm CloudflareST
           # ARM  
-          env GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o binaries/linux/arm/CloudflareST
-          cp binaries/linux/arm/CloudflareST build/CloudflareST
+          env GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o CloudflareST
+          tar -czf build/CloudflareST_linux_arm.tar.gz CloudflareST
+          cp CloudflareST binaries/linux/arm/CloudflareST
+          rm CloudflareST
           # MIPS  
-          env GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags="-s -w" -o binaries/linux/mips/CloudflareST
-          cp binaries/linux/mips/CloudflareST build/CloudflareST
+          env GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags="-s -w" -o CloudflareST
+          tar -czf build/CloudflareST_linux_mips.tar.gz CloudflareST
+          cp CloudflareST binaries/linux/mips/CloudflareST
+          rm CloudflareST
           # MIPSLE  
-          env GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags="-s -w" -o binaries/linux/mipsle/CloudflareST
-          cp binaries/linux/mipsle/CloudflareST build/CloudflareST
+          env GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags="-s -w" -o CloudflareST
+          tar -czf build/CloudflareST_linux_mipsle.tar.gz CloudflareST
+          cp CloudflareST binaries/linux/mipsle/CloudflareST
+          rm CloudflareST
 
           # Windows  
           # AMD64  
-          env GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o binaries/windows/amd64/CloudflareST.exe
-          cp binaries/windows/amd64/CloudflareST.exe build/CloudflareST.exe
+          env GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o CloudflareST.exe
+          tar -czf build/CloudflareST_windows_amd64.tar.gz CloudflareST.exe
+          cp CloudflareST.exe binaries/windows/amd64/CloudflareST.exe
+          rm CloudflareST.exe
           # 386  
-          env GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o binaries/windows/386/CloudflareST.exe
-          cp binaries/windows/386/CloudflareST.exe build/CloudflareST.exe
+          env GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o CloudflareST.exe
+          tar -czf build/CloudflareST_windows_386.tar.gz CloudflareST.exe
+          cp CloudflareST.exe binaries/windows/386/CloudflareST.exe
+          rm CloudflareST.exe
 
           # macOS  
           # AMD64  
-          env GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o binaries/darwin/amd64/CloudflareST
-          cp binaries/darwin/amd64/CloudflareST build/CloudflareST
+          env GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o CloudflareST
+          tar -czf build/CloudflareST_darwin_amd64.tar.gz CloudflareST
+          cp CloudflareST binaries/darwin/amd64/CloudflareST
+          rm CloudflareST
           # ARM64  
-          env GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o binaries/darwin/arm64/CloudflareST
-          cp binaries/darwin/arm64/CloudflareST build/CloudflareST
-
-          # 压缩构建产物
-          cd build
-          for file in *; do
-            if [ -f "$file" ]; then
-              tar -czf "${file}.tar.gz" "$file" "../ip.txt"
-            fi
-          done
+          env GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o CloudflareST
+          tar -czf build/CloudflareST_darwin_arm64.tar.gz CloudflareST
+          cp CloudflareST binaries/darwin/arm64/CloudflareST
+          rm CloudflareST
 
       - name: 安装 UPX  
         run: |  
@@ -83,12 +95,20 @@ jobs:
 
       - name: 使用 UPX 压缩二进制文件  
         run: |  
-          cd build  
-          for file in CloudflareST*; do  
-            if [[ ! "$file" =~ \.tar\.gz$ ]]; then  
-              upx --best "$file" || true  
-            fi  
-          done  
+          cd build
+          mkdir temp
+          for file in *.tar.gz; do
+            tar -xzf "$file" -C temp
+            if [ -f "temp/CloudflareST" ]; then
+              upx --best "temp/CloudflareST" || true
+              tar -czf "$file" -C temp CloudflareST
+            elif [ -f "temp/CloudflareST.exe" ]; then
+              upx --best "temp/CloudflareST.exe" || true
+              tar -czf "$file" -C temp CloudflareST.exe
+            fi
+            rm -rf temp/*
+          done
+          rm -rf temp
 
       - name: 生成 SHA256 校验和  
         run: |  
@@ -104,14 +124,13 @@ jobs:
           git push
 
       - name: 上传构建产物  
-        uses: actions/upload-artifact@v3  
+        uses: actions/upload-artifact@v4
         with:  
           name: CloudflareST-构建产物  
           path: build/*  
 
       - name: 创建发布版本  
-        id: create_release  
-        uses: softprops/action-gh-release@v1  
+        uses: softprops/action-gh-release@v2
         if: github.event_name == 'workflow_dispatch'  
         with:  
           tag_name: build-${{ github.run_number }}  
