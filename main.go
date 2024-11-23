@@ -69,20 +69,20 @@ https://github.com/XIU2/CloudflareSpeedTest
     -all4
         测速全部的 IPv4；(IPv4 默认每 /24 段随机测速一个 IP)
     -more6
-        测试更多 IPv6；(表示 -v6 18，即 2^18 即 262144 个)
+        测试更多 IPv6；(表示 -v6 18，即每个 CIDR 测速 2^18 即 262144 个)
     -lots6
-        测试较多 IPv6；(表示 -v6 16，即 2^16 即 65536 个)
+        测试较多 IPv6；(表示 -v6 16，即每个 CIDR 测速 2^16 即 65536 个)
     -many6
-        测试很多 IPv6；(表示 -v6 12，即 2^12 即 4096 个)
+        测试很多 IPv6；(表示 -v6 12，即每个 CIDR 测速 2^12 即 4096 个)
     -some6
-        测试一些 IPv6；(表示 -v6 8，即 2^8 即 256 个)
+        测试一些 IPv6；(表示 -v6 8，即每个 CIDR 测速 2^8 即 256 个)
     -many4
-        测试很多 IPv4；(表示 -v4 12，即 2^12 即 4096 个)
+        测试一点 IPv4；(表示 -v4 12，即每个 CIDR 测速 2^12 即 4096 个)
 
     -v4
-        指定 IPv4 测试数量 (2^n±m，例如 -v4 0+12 表示 2^0+12 即 13 个)
+        指定 IPv4 测试数量 (2^n±m，例如 -v4 0+12 表示 2^0+12 即每个 CIDR 测速 13 个)
     -v6
-        指定 IPv6 测试数量 (2^n±m，例如 -v6 18-6 表示 2^18-6 即 262138 个)
+        指定 IPv6 测试数量 (2^n±m，例如 -v6 18-6 表示 2^18-6 即每个 CIDR 测速 262138 个)
 
     -v
         打印程序版本 + 检查版本更新
@@ -156,7 +156,7 @@ func main() {
 	fmt.Printf("# XIU2/CloudflareSpeedTest %s \n\n", version)
 
 	ping := task.NewPing()
-	var finalSpeedData utils.DownloadSpeedSet
+	var allPingData utils.PingDelaySet
 	hasMore := true
 
 	for hasMore {
@@ -164,39 +164,32 @@ func main() {
 		pingData, more := ping.RunBatch()
 		hasMore = more
 		
-		filteredData := pingData.FilterDelay().FilterLossRate()
+		// 过滤并添加到总结果中
+		 filteredData := pingData.FilterDelay().FilterLossRate()
+		allPingData = append(allPingData, filteredData...)
+	}
+
+	// 按延迟排序
+	sort.Sort(allPingData)
+	
+	// 如果禁用了下载测速
+	if task.Disable {
+		utils.ExportCsv(utils.DownloadSpeedSet(allPingData)) // 输出结果
+		allPingData.Print()                                  // 打印结果
+	} else {
+		// 取前 task.TestCount 个 IP 进行下载测速
+		testCount := task.TestCount
+		if testCount > len(allPingData) {
+			testCount = len(allPingData)
+		}
+		speedData := task.TestDownloadSpeed(allPingData[:testCount])
 		
-		if !task.Disable { // 如果没有禁用下载测速
-			// 开始下载测速
-			speedData := task.TestDownloadSpeed(filteredData)
-			
-			// 将本批次的结果添加到最终结果中
-			finalSpeedData = append(finalSpeedData, speedData...)
-			
-			// 如果已经获得足够的结果，就停止测试
-			if len(finalSpeedData) >= task.TestCount {
-				hasMore = false
-				break
-			}
-		} else {
-			// 如果禁用了下载测速，直接添加延迟测速结果
-			finalSpeedData = append(finalSpeedData, utils.DownloadSpeedSet(filteredData)...)
-		}
-
-		// 如果这是最后一批，或者已经没有更多IP了，就不需要显示提示
-		if hasMore {
-			fmt.Printf("\n继续测试下一批 IP...\n\n")
-		}
+		// 按下载速度排序
+		sort.Sort(speedData)
+		
+		utils.ExportCsv(speedData) // 输出结果
+		speedData.Print()          // 打印结果
 	}
-
-	// 对最终结果进行排序和截断
-	sort.Sort(finalSpeedData)
-	if len(finalSpeedData) > task.TestCount {
-		finalSpeedData = finalSpeedData[:task.TestCount]
-	}
-
-	utils.ExportCsv(finalSpeedData) // 输出文件
-	finalSpeedData.Print()          // 打印结果
 
 	if versionNew != "" {
 		fmt.Printf("\n*** 发现新版本 [%s]！请前往 [https://github.com/XIU2/CloudflareSpeedTest] 更新！ ***\n", versionNew)
