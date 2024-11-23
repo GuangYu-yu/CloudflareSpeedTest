@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"sort"
 	"time"
 
 	"github.com/XIU2/CloudflareSpeedTest/task"
@@ -65,8 +66,23 @@ https://github.com/XIU2/CloudflareSpeedTest
 
     -dd
         禁用下载测速；禁用后测速结果会按延迟排序 (默认按下载速度排序)；(默认 启用)
-    -allip
-        测速全部的IP；对 IP 段中的每个 IP (仅支持 IPv4) 进行测速；(默认 每个 /24 段随机测速一个 IP)
+    -all4
+        测速全部的 IPv4；(IPv4 默认每 /24 段随机测速一个 IP)
+    -more6
+        测试更多 IPv6；(表示 -v6 18，即 2^18 即 262144 个)
+    -lots6
+        测试较多 IPv6；(表示 -v6 16，即 2^16 即 65536 个)
+    -many6
+        测试很多 IPv6；(表示 -v6 12，即 2^12 即 4096 个)
+    -some6
+        测试一些 IPv6；(表示 -v6 8，即 2^8 即 256 个)
+    -many4
+        测试很多 IPv4；(表示 -v4 12，即 2^12 即 4096 个)
+
+    -v4
+        指定 IPv4 测试数量 (2^n±m，例如 -v4 0+12 表示 2^0+12 即 13 个)
+    -v6
+        指定 IPv6 测试数量 (2^n±m，例如 -v6 18-6 表示 2^18-6 即 262138 个)
 
     -v
         打印程序版本 + 检查版本更新
@@ -97,7 +113,16 @@ https://github.com/XIU2/CloudflareSpeedTest
 	flag.StringVar(&utils.Output, "o", "result.csv", "输出结果文件")
 
 	flag.BoolVar(&task.Disable, "dd", false, "禁用下载测速")
-	flag.BoolVar(&task.TestAll, "allip", false, "测速全部 IP")
+	flag.BoolVar(&task.TestAll4, "all4", false, "测速全部 IPv4")
+
+	flag.BoolVar(&task.More6, "more6", false, "测试更多 IPv6 (相当于 -v6 18)")
+	flag.BoolVar(&task.Lots6, "lots6", false, "测试较多 IPv6 (相当于 -v6 16)")
+	flag.BoolVar(&task.Many6, "many6", false, "测试很多 IPv6 (相当于 -v6 12)")
+	flag.BoolVar(&task.Some6, "some6", false, "测试一些 IPv6 (相当于 -v6 8)")
+	flag.BoolVar(&task.Many4, "many4", false, "测试很多 IPv4 (相当于 -v4 12)")
+
+	flag.StringVar(&task.V4Param, "v4", "", "IPv4 测试数量 (2^n±m)")
+	flag.StringVar(&task.V6Param, "v6", "", "IPv6 测试数量 (2^n±m)")
 
 	flag.BoolVar(&printVersion, "v", false, "打印程序版本")
 	flag.Usage = func() { fmt.Print(help) }
@@ -130,12 +155,48 @@ func main() {
 
 	fmt.Printf("# XIU2/CloudflareSpeedTest %s \n\n", version)
 
-	// 开始延迟测速 + 过滤延迟/丢包
-	pingData := task.NewPing().Run().FilterDelay().FilterLossRate()
-	// 开始下载测速
-	speedData := task.TestDownloadSpeed(pingData)
-	utils.ExportCsv(speedData) // 输出文件
-	speedData.Print()          // 打印结果
+	ping := task.NewPing()
+	var finalSpeedData utils.DownloadSpeedSet
+	hasMore := true
+
+	for hasMore {
+		// 开始延迟测速 + 过滤延迟/丢包
+		pingData, more := ping.RunBatch()
+		hasMore = more
+		
+		filteredData := pingData.FilterDelay().FilterLossRate()
+		
+		if !task.Disable { // 如果没有禁用下载测速
+			// 开始下载测速
+			speedData := task.TestDownloadSpeed(filteredData)
+			
+			// 将本批次的结果添加到最终结果中
+			finalSpeedData = append(finalSpeedData, speedData...)
+			
+			// 如果已经获得足够的结果，就停止测试
+			if len(finalSpeedData) >= task.TestCount {
+				hasMore = false
+				break
+			}
+		} else {
+			// 如果禁用了下载测速，直接添加延迟测速结果
+			finalSpeedData = append(finalSpeedData, utils.DownloadSpeedSet(filteredData)...)
+		}
+
+		// 如果这是最后一批，或者已经没有更多IP了，就不需要显示提示
+		if hasMore {
+			fmt.Printf("\n继续测试下一批 IP...\n\n")
+		}
+	}
+
+	// 对最终结果进行排序和截断
+	sort.Sort(finalSpeedData)
+	if len(finalSpeedData) > task.TestCount {
+		finalSpeedData = finalSpeedData[:task.TestCount]
+	}
+
+	utils.ExportCsv(finalSpeedData) // 输出文件
+	finalSpeedData.Print()          // 打印结果
 
 	if versionNew != "" {
 		fmt.Printf("\n*** 发现新版本 [%s]！请前往 [https://github.com/XIU2/CloudflareSpeedTest] 更新！ ***\n", versionNew)
