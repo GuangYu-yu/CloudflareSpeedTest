@@ -207,3 +207,26 @@ func (s PingDelaySet) Print() {
 func (s DownloadSpeedSet) Print() {
 	printResults(s, "完整测速")
 }
+
+// 添加实时打印方法
+func (s DownloadSpeedSet) PrintProgress() {
+	if len(s) == 0 {
+		return
+	}
+	
+	// 清除当前行
+	fmt.Print("\033[2K\r")
+	
+	// 打印表头（仅在第一次时）
+	if len(s) == 1 {
+		fmt.Printf("%-40s%-8s%-8s%-8s%-10s%-15s\n",
+			"IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)")
+	}
+	
+	// 打印最新结果
+	data := convertToString(s)
+	for _, row := range data {
+		fmt.Printf("%-42s%-8s%-8s%-8s%-10s%-15s\n",
+			row[0], row[1], row[2], row[3], row[4], row[5])
+	}
+}
