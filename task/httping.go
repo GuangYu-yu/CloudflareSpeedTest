@@ -4,6 +4,7 @@ import (
 	//"crypto/tls"
 	//"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -59,7 +60,7 @@ func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration) {
 			}
 		}
 
-		io.Copy(io.Discard, resp.Body)
+		io.Copy(ioutil.Discard, resp.Body)
 
 		// 只有指定了地区才匹配机场三字码
 		if HttpingCFColo != "" {
@@ -97,7 +98,7 @@ func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration) {
 			continue
 		}
 		success++
-		io.Copy(io.Discard, resp.Body)
+		io.Copy(ioutil.Discard, resp.Body)
 		_ = resp.Body.Close()
 		duration := time.Since(startTime)
 		delay += duration
