@@ -1,0 +1,95 @@
+name: 构建 CloudflareSpeedTest
+on:  
+  workflow_dispatch:   # 允许手动触发
+
+jobs:  
+  build:  
+    name: 构建  
+    runs-on: ubuntu-latest  
+
+    steps:  
+      - name: 检出代码  
+        uses: actions/checkout@v4  
+
+      - name: 设置 Go 环境  
+        uses: actions/setup-go@v4  
+        with:  
+          go-version: '1.14'  
+
+      - name: 构建所有平台  
+        run: |  
+          mkdir -p build  
+
+          # Linux  
+          # AMD64  
+          env GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build/CloudflareST_linux_amd64  
+          # 386  
+          env GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o build/CloudflareST_linux_386  
+          # ARM64  
+          env GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o build/CloudflareST_linux_arm64  
+          # ARM  
+          env GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o build/CloudflareST_linux_arm  
+          # MIPS  
+          env GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags="-s -w" -o build/CloudflareST_linux_mips  
+          # MIPSLE  
+          env GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags="-s -w" -o build/CloudflareST_linux_mipsle  
+
+          # Windows  
+          # AMD64  
+          env GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o build/CloudflareST_windows_amd64.exe  
+          # 386  
+          env GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o build/CloudflareST_windows_386.exe  
+
+          # macOS  
+          # AMD64  
+          env GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o build/CloudflareST_darwin_amd64  
+          # ARM64  
+          env GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o build/CloudflareST_darwin_arm64  
+
+          # 压缩所有二进制文件  
+          cd build  
+          for file in *; do  
+            if [ -f "$file" ]; then  
+              tar -czf "${file}.tar.gz" "$file" "../ip.txt"  
+            fi  
+          done  
+
+      - name: 安装 UPX  
+        run: |  
+          sudo apt-get update  
+          sudo apt-get install -y upx  
+
+      - name: 使用 UPX 压缩二进制文件  
+        run: |  
+          cd build  
+          for file in CloudflareST_*; do  
+            if [[ ! "$file" =~ \.tar\.gz$ ]]; then  
+              upx --best "$file" || true  
+            fi  
+          done  
+
+      - name: 生成 SHA256 校验和  
+        run: |  
+          cd build  
+          sha256sum * > sha256sum.txt  
+
+      - name: 上传构建产物  
+        uses: actions/upload-artifact@v3  
+        with:  
+          name: CloudflareST-构建产物  
+          path: build/*  
+
+      - name: 创建发布版本  
+        id: create_release  
+        uses: softprops/action-gh-release@v1  
+        if: github.event_name == 'workflow_dispatch'  
+        with:  
+          tag_name: build-${{ github.run_number }}  
+          name: 构建版本 ${{ github.run_number }}  
+          draft: false  
+          prerelease: false  
+          files: |  
+            build/*.tar.gz  
+            build/sha256sum.txt  
+        env:  
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
