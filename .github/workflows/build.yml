@@ -69,12 +69,12 @@ jobs:
           # AMD64  
           env GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o CloudflareST.exe
           tar -czf build/CloudflareST_windows_amd64.tar.gz CloudflareST.exe
-          cp CloudflareST binaries/CloudflareST_windows_amd64
+          cp CloudflareST.exe binaries/CloudflareST_windows_amd64
           rm CloudflareST
           # 386  
           env GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o CloudflareST.exe
           tar -czf build/CloudflareST_windows_386.tar.gz CloudflareST.exe
-          cp CloudflareST binaries/CloudflareST_windows_386
+          cp CloudflareST.exe binaries/CloudflareST_windows_386
           rm CloudflareST
 
           # macOS  
