@@ -115,13 +115,40 @@ jobs:
           cd build  
           sha256sum * > sha256sum.txt  
 
-      - name: 提交二进制文件到仓库
+      - name: 提交并推送更改
+        if: success()
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add binaries/
-          git commit -m "Update binaries [skip ci]" || echo "No changes to commit"
-          git push
+          # 确保 binaries 目录存在
+          if [ -d "binaries" ]; then
+            # 配置 git
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            
+            # 只添加 binaries 目录
+            git add binaries/
+            
+            # 获取当前时间
+            current_time=$(date '+%Y/%m/%d %H:%M:%S')
+            
+            # 尝试提交更改
+            if git diff --staged --quiet; then
+              echo "没有需要提交的更改"
+            else
+              # 提交更改
+              git commit -m "Update binaries on ${current_time}"
+              
+              # 设置远程仓库 URL
+              git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+              
+              # 拉取最新更改并变基
+              git pull --rebase
+              
+              # 推送更改
+              git push
+            fi
+          else
+            echo "binaries 目录不存在，跳过提交"
+          fi
 
       - name: 上传构建产物  
         uses: actions/upload-artifact@v4
