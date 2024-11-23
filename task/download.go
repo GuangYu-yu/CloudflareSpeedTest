@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/XIU2/CloudflareSpeedTest/utils"
