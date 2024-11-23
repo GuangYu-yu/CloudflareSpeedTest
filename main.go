@@ -176,7 +176,7 @@ func main() {
 	
 	// 第一阶段：完成所有延迟测试直到达到目标数量
 	for hasMore && len(allPingData) < targetCount {
-		pingData, more := ping.RunBatch()
+		pingData, more := ping.RunBatch(targetCount)
 		hasMore = more
 		
 		// 过滤并添加到总结果中
