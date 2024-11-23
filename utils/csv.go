@@ -156,18 +156,30 @@ func (s DownloadSpeedSet) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func (s DownloadSpeedSet) Print() {
+// 通用的打印方法
+func printResults(s interface{}, resultType string) {
 	if NoPrintResult() {
 		return
 	}
-	if len(s) <= 0 { // IP数组长度(IP数量) 大于 0 时继续
-		fmt.Println("\n[信息] 完整测速结果 IP 数量为 0，跳过输出结果。")
+	
+	var data []CloudflareIPData
+	switch v := s.(type) {
+	case PingDelaySet:
+		data = []CloudflareIPData(v)
+	case DownloadSpeedSet:
+		data = []CloudflareIPData(v)
+	}
+	
+	if len(data) <= 0 {
+		fmt.Printf("\n[信息] %s结果 IP 数量为 0，跳过输出结果。\n", resultType)
 		return
 	}
-	dateString := convertToString(s) // 转为多维数组 [][]String
-	if len(dateString) < PrintNum {  // 如果IP数组长度(IP数量) 小于  打印次数，则次数改为IP数量
+	
+	dateString := convertToString(data)
+	if len(dateString) < PrintNum {
 		PrintNum = len(dateString)
 	}
+	
 	headFormat := "%-16s%-5s%-5s%-5s%-6s%-11s\n"
 	dataFormat := "%-18s%-8s%-8s%-8s%-10s%-15s\n"
 	for i := 0; i < PrintNum; i++ { // 如果要输出的 IP 中包含 IPv6，那么就需要调整一下间隔
@@ -177,11 +189,21 @@ func (s DownloadSpeedSet) Print() {
 			break
 		}
 	}
+	
 	fmt.Printf(headFormat, "IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)")
 	for i := 0; i < PrintNum; i++ {
 		fmt.Printf(dataFormat, dateString[i][0], dateString[i][1], dateString[i][2], dateString[i][3], dateString[i][4], dateString[i][5])
 	}
+	
 	if !noOutput() {
 		fmt.Printf("\n完整测速结果已写入 %v 文件，可使用记事本/表格软件查看。\n", Output)
 	}
+}
+
+func (s PingDelaySet) Print() {
+	printResults(s, "延迟测速")
+}
+
+func (s DownloadSpeedSet) Print() {
+	printResults(s, "完整测速")
 }
