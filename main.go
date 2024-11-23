@@ -158,12 +158,6 @@ func main() {
     ping := task.NewPing()
     var allPingData utils.PingDelaySet
     hasMore := true
-
-    // 显示测速模式和参数
-    mode := "TCP"
-    if task.Httping {
-        mode = "HTTP"
-    }
     
     targetCount := 10000 // 设置目标可用IP数量
     
