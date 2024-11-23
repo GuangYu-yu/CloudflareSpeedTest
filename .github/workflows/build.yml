@@ -125,7 +125,13 @@ jobs:
             git config --local user.email "action@github.com"
             git config --local user.name "GitHub Action"
             
-            # 只添加 binaries 目录
+            # 设置远程仓库 URL
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+            
+            # 拉取最新更改
+            git pull origin master --no-rebase
+            
+            # 添加并提交更改
             git add binaries/
             
             # 获取当前时间
@@ -137,12 +143,6 @@ jobs:
             else
               # 提交更改
               git commit -m "Update binaries on ${current_time}"
-              
-              # 设置远程仓库 URL
-              git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-              
-              # 拉取最新更改并变基
-              git pull --rebase
               
               # 推送更改
               git push
