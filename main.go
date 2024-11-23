@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"runtime"
@@ -223,13 +223,13 @@ func checkUpdate() {
 		return
 	}
 	// 读取资源数据 body: []byte
-	body, err := io.ReadAll(res.Body)
+	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		return
 	}
 	// 关闭资源流
 	defer res.Body.Close()
 	if string(body) != version {
-		versionNew = string(body)
+			versionNew = string(body)
 	}
 }
