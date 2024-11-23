@@ -17,6 +17,7 @@ const (
 	defaultRoutines   = 200
 	defaultPort       = 443
 	defaultPingTimes  = 4
+	batchSize         = 10000 // 每批次测试的IP数量
 )
 
 var (
@@ -26,12 +27,13 @@ var (
 )
 
 type Ping struct {
-	wg      *sync.WaitGroup
-	m       *sync.Mutex
-	ips     []*net.IPAddr
-	csv     utils.PingDelaySet
-	control chan bool
-	bar     *utils.Bar
+	wg       *sync.WaitGroup
+	m        *sync.Mutex
+	ips      []*net.IPAddr
+	csv      utils.PingDelaySet
+	control  chan bool
+	bar      *utils.Bar
+	position int // 当前测试的位置
 }
 
 func checkPingDefault() {
@@ -50,33 +52,52 @@ func NewPing() *Ping {
 	checkPingDefault()
 	ips := loadIPRanges()
 	return &Ping{
-		wg:      &sync.WaitGroup{},
-		m:       &sync.Mutex{},
-		ips:     ips,
-		csv:     make(utils.PingDelaySet, 0),
-		control: make(chan bool, Routines),
-		bar:     utils.NewBar(len(ips), "可用:", ""),
+		wg:       &sync.WaitGroup{},
+		m:        &sync.Mutex{},
+		ips:      ips,
+		csv:      make(utils.PingDelaySet, 0),
+		control:  make(chan bool, Routines),
+		bar:      utils.NewBar(len(ips), "可用:", ""),
+		position: 0,
 	}
 }
 
-func (p *Ping) Run() utils.PingDelaySet {
-	if len(p.ips) == 0 {
-		return p.csv
+// RunBatch 运行一批测试，返回是否还有更多IP需要测试
+func (p *Ping) RunBatch() (utils.PingDelaySet, bool) {
+	if p.position >= len(p.ips) {
+		return nil, false
 	}
+
+	end := p.position + batchSize
+	if end > len(p.ips) {
+		end = len(p.ips)
+	}
+
+	currentBatch := p.ips[p.position:end]
+	p.csv = make(utils.PingDelaySet, 0) // 清空之前的结果
+
+	if len(currentBatch) == 0 {
+		return nil, false
+	}
+
 	if Httping {
 		fmt.Printf("开始延迟测速（模式：HTTP, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f)\n", TCPPort, utils.InputMinDelay.Milliseconds(), utils.InputMaxDelay.Milliseconds(), utils.InputMaxLossRate)
 	} else {
 		fmt.Printf("开始延迟测速（模式：TCP, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f)\n", TCPPort, utils.InputMinDelay.Milliseconds(), utils.InputMaxDelay.Milliseconds(), utils.InputMaxLossRate)
 	}
-	for _, ip := range p.ips {
+
+	for _, ip := range currentBatch {
 		p.wg.Add(1)
 		p.control <- false
 		go p.start(ip)
 	}
 	p.wg.Wait()
-	p.bar.Done()
+
+	p.position = end // 更新位置
+	hasMore := p.position < len(p.ips)
+
 	sort.Sort(p.csv)
-	return p.csv
+	return p.csv, hasMore
 }
 
 func (p *Ping) start(ip *net.IPAddr) {
