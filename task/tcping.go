@@ -17,7 +17,6 @@ const (
 	defaultRoutines   = 200
 	defaultPort       = 443
 	defaultPingTimes  = 4
-	batchSize         = 10000 // 每批次测试的IP数量
 )
 
 var (
