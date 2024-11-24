@@ -10,8 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"time"
-	
-	"github.com/GuangYu-yu/CloudflareSpeedTest/task"
+	"sync/atomic"
 )
 
 const (
@@ -256,4 +255,15 @@ func (s DownloadSpeedSet) Print() {
 	if !noOutput() {
 		fmt.Printf("\n完整测速结果已写入 %v 文件，可使用记事本/表格软件查看。\n", Output)
 	}
+}
+
+// 带宽相关
+var currentBandwidth int64
+
+func GetCurrentBandwidth() float64 {
+	return float64(atomic.LoadInt64(&currentBandwidth)) / 1024 / 1024
+}
+
+func UpdateBandwidth(speed int64) {
+	atomic.StoreInt64(&currentBandwidth, speed)
 }
