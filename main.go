@@ -26,6 +26,7 @@ import (
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 )
 
 // 全局变量定义
@@ -183,8 +184,6 @@ func NewBar(count int, MyStrStart, MyStrEnd string) *Bar {
 		progress.WithGradient("#7571F9", "#9681EB"),  // 紫色渐变
 		progress.WithWidth(40),                        // 进度条宽度
 		progress.WithDefaultGradient(),                // 默认渐变色
-		progress.WithDefaultChar('━'),                 // 进度条字符
-		progress.WithoutPercentage(),                  // 不显示百分比
 	)
 	
 	return &Bar{
@@ -193,7 +192,6 @@ func NewBar(count int, MyStrStart, MyStrEnd string) *Bar {
 		message:  MyStrStart,
 	}
 }
-
 func (b *Bar) Grow(num int, MyStrVal string) {
 	b.current += num
 	b.message = MyStrVal
@@ -1038,9 +1036,9 @@ https://github.com/XIU2/CloudflareSpeedTest
     }
 
     // 检测是否支持彩色输出
-    if !terminal.IsTerminal(int(os.Stdout.Fd())) {
+    if !term.IsTerminal(int(os.Stdout.Fd())) {
         // 不支持时禁用颜色
-        lipgloss.SetColorProfile(lipgloss.NoColor)
+        lipgloss.SetColorProfile(lipgloss.NoColorProfile)
     }
 
     // 解析 v4/v6 参数
@@ -1171,10 +1169,10 @@ func abs(d time.Duration) time.Duration {
 }
 
 // 修改 TestDownloadSpeed 函数，对延迟相近的IP分组打乱
-func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSet) {
+func TestDownloadSpeed(ipSet PingDelaySet) (speedSet DownloadSpeedSet) {
     checkDownloadDefault()
     if Disable {
-        return utils.DownloadSpeedSet(ipSet)
+        return DownloadSpeedSet(ipSet)
     }
     if len(ipSet) <= 0 {
         fmt.Println("\n[信息] 延迟测速结果 IP 数量为 0，跳过下载测速。")
@@ -1225,10 +1223,10 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
     }
 
     fmt.Printf("开始下载测速（下限：%.2f MB/s, 数量：%d, 队列：%d）\n", MinSpeed, TestCount, testNum)
-    bar := utils.NewBar(TestCount, "", "")
+    bar := NewBar(TestCount, "", "")
     
     for i := 0; i < testNum; i++ {
-        speed := downloadHandler(shuffledIPs[i].IP)
+        speed := downloadHandler(shuffledIPs[i].IP, bar, NewSpeedTracker())
         shuffledIPs[i].DownloadSpeed = speed
         if speed >= MinSpeed*1024*1024 {
             bar.Grow(1, "")
@@ -1241,7 +1239,7 @@ func TestDownloadSpeed(ipSet utils.PingDelaySet) (speedSet utils.DownloadSpeedSe
     
     bar.Done()
     if len(speedSet) == 0 {
-        speedSet = utils.DownloadSpeedSet(shuffledIPs)
+        speedSet = DownloadSpeedSet(shuffledIPs)
     }
     sort.Sort(speedSet)
     return
@@ -1321,7 +1319,6 @@ const (
     defaultTestNum    = 10
     defaultMinSpeed   float64 = 0.0
 )
-
 func checkDownloadDefault() {
     if URL == "" {
         URL = defaultURL
@@ -1438,3 +1435,5 @@ func calculateMaxCount() {
         }
     }
 }
+
+
