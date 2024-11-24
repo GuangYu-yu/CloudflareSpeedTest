@@ -18,7 +18,6 @@ import (
 	"github.com/VividCortex/ewma"
 	"github.com/valyala/fasthttp"
 	"github.com/fatih/pool"
-	"github.com/vitessio/vitess/go/pools"
 )
 
 const (
@@ -42,14 +41,11 @@ var (
 
 	connPool pool.Pool
 
-	bufferPool = pools.NewResourcePool(
-		func() (pools.Resource, error) {
-			return make([]byte, bufferSize), nil
+	bufferPool = sync.Pool{
+		New: func() interface{} {
+			return make([]byte, bufferSize)
 		},
-		100,    // 最大容量
-		100,    // 最大容量
-		0,      // 空闲超时
-	)
+	}
 )
 
 func init() {
@@ -141,9 +137,8 @@ func getDialContext(ip *net.IPAddr) func(ctx context.Context, network, address s
 // return download Speed
 func downloadHandler(ip *net.IPAddr) float64 {
 	// 从池中获取缓冲区
-	bufferResource, _ := bufferPool.Get(context.Background())
-	defer bufferPool.Put(bufferResource)
-	buffer := bufferResource.([]byte)
+	buffer := bufferPool.Get().([]byte)
+	defer bufferPool.Put(buffer)
 	
 	client := &fasthttp.Client{
 		Dial: func(addr string) (net.Conn, error) {
