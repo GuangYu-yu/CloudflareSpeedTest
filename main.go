@@ -151,17 +151,12 @@ func (b *Bar) Grow(n int, suffix string) {
 			filled = barWidth
 		}
 		
-		// 更新动画方块
-		b.blockIndex = (b.blockIndex + 1) % len(b.blocks)
-		block := b.blocks[b.blockIndex]
-		
 		var bar string
 		if filled < barWidth {
 			bar = strings.Repeat("█", filled)
 			
-			elapsed := time.Since(b.startTime).Seconds()
-			blockIndex := int(elapsed*15) % len(b.blocks)
-			bar += b.blocks[blockIndex]
+			b.blockIndex = (b.blockIndex + 1) % len(b.blocks)
+			bar += b.blocks[b.blockIndex]
 			
 			bar += strings.Repeat("░", barWidth-filled-1)
 		} else {
@@ -173,14 +168,14 @@ func (b *Bar) Grow(n int, suffix string) {
 			fmt.Printf("\r%d / %d [%s] %.2f MB/s",
 				b.current,
 				b.total,
-				 bar,
+				bar,
 				b.bandwidth,
 			)
 		} else {
 			fmt.Printf("\r%d / %d [%s] %s",
 				b.current,
 				b.total,
-				 bar,
+				bar,
 				b.suffix,
 			)
 		}
