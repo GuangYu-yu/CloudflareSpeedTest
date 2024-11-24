@@ -384,11 +384,11 @@ func printResults(s interface{}, resultType string) {
 	}
 	
 	if ShowAirport {
-		headFormat = "%-16s%-5s%-5s%-5s%-6s%-11s%-5s\n"
-		dataFormat = "%-18s%-8s%-8s%-8s%-10s%-15s%-5s\n"
+		headFormat = "%-16s%-5s%-5s%-5s%-6s%-15s  %-5s\n"
+		dataFormat = "%-18s%-8s%-8s%-8s%-10s%-15.2f  %-5s\n"
 	} else {
 		headFormat = "%-16s%-5s%-5s%-5s%-6s%-11s\n"
-		dataFormat = "%-18s%-8s%-8s%-8s%-10s%-15s\n"
+		dataFormat = "%-18s%-8s%-8s%-8s%-10s%-15.2f\n"
 	}
 	
 	for i := 0; i < PrintNum; i++ {
@@ -1180,8 +1180,9 @@ func TestDownloadSpeed(ipSet PingDelaySet) (speedSet DownloadSpeedSet) {
 		fmt.Println("\n[信息] 延迟测速结果 IP 数量为 0，跳过下载测速。")
 		return
 	}
+
 	testNum := TestCount
-	if len(ipSet) < TestCount || MinSpeed > 0 {
+	if len(ipSet) < TestCount || MinSpeed > 0 { // 如果IP数量小于下载测速数量,或设置了下载速度下限,则测试所有IP
 		testNum = len(ipSet)
 	}
 	if testNum < TestCount {
@@ -1191,46 +1192,43 @@ func TestDownloadSpeed(ipSet PingDelaySet) (speedSet DownloadSpeedSet) {
 	fmt.Printf("开始下载测速（下限：%.2f MB/s, 数量：%d, 队列：%d）\n", MinSpeed, TestCount, testNum)
 	bar := NewBar(TestCount, "", "")
 	
-	resultChan := make(chan CloudflareIPData, testNum)
-	
+	// 测试所有指定数量的IP
 	for i := 0; i < testNum; i++ {
-		go func(ip CloudflareIPData) {
-			speed := downloadHandler(ip.IP)
-			ip.DownloadSpeed = speed
-			resultChan <- ip
-		}(ipSet[i])
-	}
-
-	count := 0
-	for i := 0; i < testNum; i++ {
-		result := <-resultChan
-		if result.DownloadSpeed >= MinSpeed*1024*1024 {
-			speedSet = append(speedSet, result)
+		speed := downloadHandler(ipSet[i].IP)
+		ipSet[i].DownloadSpeed = speed
+		// 用速度下限过滤
+		if speed >= MinSpeed*1024*1024 {
+			speedSet = append(speedSet, ipSet[i])
 			bar.Grow(1, "")
-			count++
-			if count == TestCount {
+			if len(speedSet) == TestCount { // 找到足够的IP后就停止
 				break
 			}
 		}
 	}
 	
 	bar.Done()
+	
+	if len(speedSet) == 0 { // 如果没有符合速度要求的,就返回所有结果
+		speedSet = DownloadSpeedSet(ipSet[:testNum])
+	}
+	
+	sort.Sort(speedSet) // 按速度排序
 	return
 }
 
 func downloadHandler(ip *net.IPAddr) float64 {
 	client := &http.Client{
-		Transport: &http.Transport{DialContext: getDialContext(ip)},
-		Timeout:   Timeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > 10 {
-				return http.ErrUseLastResponse
-			}
-			if req.Header.Get("Referer") == URL {
-				req.Header.Del("Referer")
-			}
-			return nil
-		},
+			Transport: &http.Transport{DialContext: getDialContext(ip)},
+			Timeout:   Timeout,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+					if len(via) > 10 {
+							return http.ErrUseLastResponse
+					}
+					if req.Header.Get("Referer") == URL {
+							req.Header.Del("Referer")
+					}
+					return nil
+			},
 	}
 	req, err := http.NewRequest("GET", URL, nil)
 	if err != nil {
@@ -1267,9 +1265,13 @@ func downloadHandler(ip *net.IPAddr) float64 {
 		if currentTime.After(nextTime) {
 			timeCounter++
 			nextTime = timeStart.Add(timeSlice * time.Duration(timeCounter))
-			e.Add(float64(contentRead - lastContentRead))
+			speed := float64(contentRead-lastContentRead) / timeSlice.Seconds()
+			e.Add(speed)
 			lastContentRead = contentRead
+			
+			// 不再在这里打印速度,避免干扰进度条显示
 		}
+		
 		if currentTime.After(timeEnd) {
 			break
 		}
@@ -1285,6 +1287,7 @@ func downloadHandler(ip *net.IPAddr) float64 {
 		}
 		contentRead += int64(bufferRead)
 	}
+	
 	return e.Value() / (Timeout.Seconds() / 120)
 }
 
