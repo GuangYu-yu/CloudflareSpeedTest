@@ -11,13 +11,9 @@ import (
 	"sync"
 	"time"
 	"sync/atomic"
-	"log"
 
 	"github.com/XIU2/CloudflareSpeedTest/utils"
-
 	"github.com/VividCortex/ewma"
-	"github.com/valyala/fasthttp"
-	"github.com/fatih/pool"
 )
 
 const (
@@ -39,27 +35,13 @@ var (
 
 	currentBandwidth int64 // 原子操作，记录当前总带宽 (bytes/s)
 
-	connPool pool.Pool
-
+	// 使用 sync.Pool 管理缓冲区
 	bufferPool = sync.Pool{
 		New: func() interface{} {
 			return make([]byte, bufferSize)
 		},
 	}
 )
-
-func init() {
-	// 创建连接池
-	factory := func() (net.Conn, error) {
-		return nil, nil // 实际连接将在使用时创建
-	}
-	
-	var err error
-	connPool, err = pool.NewChannelPool(0, 100, factory)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
 
 func checkDownloadDefault() {
 	if URL == "" {
@@ -139,37 +121,40 @@ func downloadHandler(ip *net.IPAddr) float64 {
 	// 从池中获取缓冲区
 	buffer := bufferPool.Get().([]byte)
 	defer bufferPool.Put(buffer)
-	
-	client := &fasthttp.Client{
-		Dial: func(addr string) (net.Conn, error) {
-			return (&net.Dialer{}).Dial("tcp", fmt.Sprintf("%s:%d", ip.String(), TCPPort))
+
+	client := &http.Client{
+		Transport: &http.Transport{DialContext: getDialContext(ip)},
+		Timeout:   Timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) > 10 { // 限制最多重定向 10 次
+				return http.ErrUseLastResponse
+			}
+			if req.Header.Get("Referer") == defaultURL { // 当使用默认下载测速地址时，重定向不携带 Referer
+				req.Header.Del("Referer")
+			}
+			return nil
 		},
-		MaxConnsPerHost: 1,
-		ReadTimeout:     Timeout,
-		WriteTimeout:    Timeout,
 	}
-
-	req := fasthttp.AcquireRequest()
-	defer fasthttp.ReleaseRequest(req)
-	
-	req.SetRequestURI(URL)
-	req.Header.SetUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.80 Safari/537.36")
-
-	resp := fasthttp.AcquireResponse()
-	defer fasthttp.ReleaseResponse(resp)
-
-	if err := client.Do(req, resp); err != nil {
+	req, err := http.NewRequest("GET", URL, nil)
+	if err != nil {
 		return 0.0
 	}
 
-	if resp.StatusCode() != 200 {
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.80 Safari/537.36")
+
+	response, err := client.Do(req)
+	if err != nil {
+		return 0.0
+	}
+	defer response.Body.Close()
+	if response.StatusCode != 200 {
 		return 0.0
 	}
 
 	timeStart := time.Now()           // 开始时间（当前）
 	timeEnd := timeStart.Add(Timeout) // 加上下载测速时间得到的结束时间
 
-	contentLength := resp.ContentLength // 文件大小
+	contentLength := response.ContentLength // 文件大小
 
 	var (
 		contentRead     int64 = 0
@@ -197,7 +182,7 @@ func downloadHandler(ip *net.IPAddr) float64 {
 		if currentTime.After(timeEnd) {
 			break
 		}
-		bufferRead, err := resp.Body.Read(buffer)
+		bufferRead, err := response.Body.Read(buffer)
 		if err != nil {
 			if err != io.EOF { // 如果文件下载过程中遇到报错（如 Timeout），且并不是因为文件下载完了，则退出循环（终止测速）
 				break
@@ -216,6 +201,7 @@ func downloadHandler(ip *net.IPAddr) float64 {
 	defer updateBandwidth(0)
 	return e.Value() / (Timeout.Seconds() / 120)
 }
+
 // 获取当前总带宽 (MB/s)
 func GetCurrentBandwidth() float64 {
 	return float64(atomic.LoadInt64(&currentBandwidth)) / 1024 / 1024
