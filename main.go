@@ -435,43 +435,6 @@ func (s DownloadSpeedSet) Print() {
 	printResults(s, "完整测速")
 }
 
-// 修改 PrintProgress 方法
-func (s DownloadSpeedSet) PrintProgress() {
-	if len(s) == 0 {
-		return
-	}
-	
-	// 清除之前的输出
-	fmt.Print("\033[2K\r") // 清除当前行
-	
-	// 计算需要清除的行数
-	linesToClear := len(s)
-	if len(s) > 1 {
-		linesToClear++ // 加上标题行
-	}
-	
-	// 向上移动并清除之前的所有行
-	for i := 0; i < linesToClear; i++ {
-		fmt.Print("\033[1A\033[2K")
-	}
-	
-	// 打印新的内容
-	if len(s) == 1 {
-		headers := getHeaders()
-		headerInterfaces := make([]interface{}, len(headers))
-		for i, v := range headers {
-			headerInterfaces[i] = v
-		}
-		fmt.Printf(headFormat, headerInterfaces...)
-	}
-	
-	data := convertToString(s)
-	for _, row := range data {
-		fmt.Printf("%-42s%-8s%-8s%-8s%-10s%-15s%-5s\n",
-			row[0], row[1], row[2], row[3], row[4], row[5], row[6])
-	}
-}
-
 // 初始化函数
 func init() {
 	var printVersion bool
@@ -1238,25 +1201,20 @@ func TestDownloadSpeed(ipSet PingDelaySet) (speedSet DownloadSpeedSet) {
 		}(ipSet[i])
 	}
 
+	count := 0
 	for i := 0; i < testNum; i++ {
 		result := <-resultChan
 		if result.DownloadSpeed >= MinSpeed*1024*1024 {
 			speedSet = append(speedSet, result)
-			sort.Sort(speedSet)
 			bar.Grow(1, "")
-			
-			fmt.Print("\n")
-			speedSet.PrintProgress()
-			fmt.Printf("\033[%dA", len(speedSet)+1)
-			
-			if len(speedSet) == TestCount {
+			count++
+			if count == TestCount {
 				break
 			}
 		}
 	}
 	
 	bar.Done()
-	fmt.Printf("\033[%dB", len(speedSet)+1)
 	return
 }
 
