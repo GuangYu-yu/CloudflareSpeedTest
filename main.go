@@ -716,8 +716,6 @@ func downloadHandler(ip *net.IPAddr, bar *Bar, st *SpeedTracker) float64 {
         return 0.0
     }
 
-    timeStart := time.Now()
-
     contentLength := response.ContentLength
     buffer := make([]byte, 1024)
 
@@ -1278,13 +1276,14 @@ func (p *Ping) getColo(b string) string {
 
 // CloudflareIPData 的 toString 方法
 func (cf *CloudflareIPData) toString() []string {
-    result := make([]string, 6)
+    result := make([]string, 7)
     result[0] = cf.IP.String()
     result[1] = strconv.Itoa(cf.Sended)
     result[2] = strconv.Itoa(cf.Received)
     result[3] = strconv.FormatFloat(float64(cf.getLossRate()), 'f', 2, 32)
     result[4] = strconv.FormatFloat(cf.Delay.Seconds()*1000, 'f', 2, 32)
     result[5] = strconv.FormatFloat(cf.DownloadSpeed/1024/1024, 'f', 2, 32)
+    result[6] = cf.colo
     return result
 }
 
