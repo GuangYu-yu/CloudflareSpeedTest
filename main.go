@@ -75,6 +75,19 @@ var (
     // IPv4/IPv6 测试数量相关
     v4MaxCount int = 0  // IPv4 最大测试数量
     v6MaxCount int = 0  // IPv6 最大测试数量
+    
+    // IPv6 测试相关
+    TestMore6 bool
+    TestLots6 bool
+    TestMany6 bool
+    TestSome6 bool
+    TestMany4 bool
+    
+    // 测试数量计算相关
+    v4Power int
+    v4Adjust int
+    v6Power int
+    v6Adjust int
 )
 
 // 基础结构体定义
@@ -975,14 +988,13 @@ https://github.com/XIU2/CloudflareSpeedTest
     flag.StringVar(&Output, "o", "result.csv", "输出结果文件")
     
     flag.BoolVar(&Disable, "dd", false, "禁用下载测速")
-    flag.BoolVar(&TestAll, "allip", false, "测速全部的IP")
+    flag.BoolVar(&TestAll, "all4", false, "测速全部的 IPv4")
     
     flag.BoolVar(&printVersion, "v", false, "打印程序版本")
     flag.IntVar(&downloadTime, "dt", 10, "下载测速时间")
     flag.Float64Var(&maxLossRate, "tlr", 1, "丢包几率上限")
 
     // 添加新的命令行参数
-    flag.BoolVar(&TestAll, "all4", false, "测速全部的 IPv4")
     flag.BoolVar(&TestMore6, "more6", false, "测试更多 IPv6 (2^18)")
     flag.BoolVar(&TestLots6, "lots6", false, "测试较多 IPv6 (2^16)")
     flag.BoolVar(&TestMany6, "many6", false, "测试很多 IPv6 (2^12)")
