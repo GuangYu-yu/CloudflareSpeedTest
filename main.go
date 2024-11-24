@@ -58,6 +58,10 @@ var (
 	InputMaxLossRate = float32(1.0)
 	Output           = "result.csv"
 	PrintNum         = 10
+	
+	// 在全局变量定义部分添加
+	v4Param string
+	v6Param string
 )
 
 // 添加新的常量定义
@@ -65,6 +69,7 @@ const (
     maxV4Power = 16  // 2^16 = 65536
     maxV6Power = 20  // 2^20 = 1048576
     maxTotalIPs = 500000 // 最大总IP数
+    delayTolerance = 5 * time.Millisecond // 5ms 以内的延迟差异视为相近
 )
 
 // 添加新的变量定义
@@ -200,13 +205,20 @@ func (b *Bar) Grow(num int, MyStrVal string) {
 	// 使用 bubbles 内置的进度条渲染
 	prog := b.progress.ViewAs(percent)
 	
-	// 构建完整显示，显示当前测速进度和总带宽
-	w := fmt.Sprintf(
-		"\r%d/%d %s %.2f MB/s",
-		b.current, b.total,    // 测试进度
-		prog,                  // 进度条
-		b.message,             // 当前总带宽
-	)
+	var w string
+	if MyStrVal == "" {
+		w = fmt.Sprintf("\r%d/%d %s 可用：%d", 
+			b.current, b.total,
+			prog,
+			b.current,
+		)
+	} else {
+		w = fmt.Sprintf("\r%d/%d %s %.2f MB/s",
+			b.current, b.total,
+			prog,
+			b.message,
+		)
+	}
 	
 	fmt.Print(w)
 }
@@ -300,10 +312,8 @@ func (r *IPRanges) chooseIPv4() {
         if v4MaxCount < maxIPs {
             maxIPs = v4MaxCount
         }
-    } else {
-        // 没有设置任何数量限制时，使用默认方式:
-        // 每个 /24 段随机测速一个 IP
-        maxIPs = 1
+    } else if !TestAll { // 没有设置任何数量限制且不是测试全部IP时，使用默认方式
+        maxIPs = 1 // 每个 /24 段随机测速一个 IP
     }
     
     // 如果需要测试的IP数量小于该CIDR中的所有IP数量
@@ -459,16 +469,13 @@ func (s PingDelaySet) Len() int {
     return len(s)
 }
 
-// 修改 PingDelaySet 的 Less 方法，添加延迟阈值常量
-const delayTolerance = 5 * time.Millisecond // 5ms 以内的延迟差异视为相近
-
 func (s PingDelaySet) Less(i, j int) bool {
     iRate, jRate := s[i].getLossRate(), s[j].getLossRate()
     if iRate != jRate {
         return iRate < jRate
     }
     
-    // 如果延迟差异在阈值内，则随机排序
+    // 如果延迟差异在阈值内，则随机排序，避免结果集中在同一个CIDR
     if abs(s[i].Delay - s[j].Delay) <= delayTolerance {
         return rand.Float32() < 0.5
     }
@@ -520,11 +527,6 @@ func NewPing() *Ping {
 func (p *Ping) Run() PingDelaySet {
     if len(p.ips) == 0 {
         return p.csv
-    }
-    if Httping {
-        fmt.Printf("开始延迟测速（模式：HTTP, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f)\n", TCPPort, InputMinDelay.Milliseconds(), InputMaxDelay.Milliseconds(), InputMaxLossRate)
-    } else {
-        fmt.Printf("开始延迟测速（模式：TCP, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f)\n", TCPPort, InputMinDelay.Milliseconds(), InputMaxDelay.Milliseconds(), InputMaxLossRate)
     }
     for _, ip := range p.ips {
         p.wg.Add(1)
@@ -835,22 +837,14 @@ func (s DownloadSpeedSet) Print() {
 func convertToString(data []CloudflareIPData) [][]string {
     result := make([][]string, 0)
     for _, v := range data {
-        result = append(result, []string{
-            v.IP.String(),
-            strconv.Itoa(v.Sended),
-            strconv.Itoa(v.Received),
-            strconv.FormatFloat(float64(v.getLossRate()), 'f', 2, 32),
-            strconv.FormatFloat(v.Delay.Seconds()*1000, 'f', 2, 32),
-            strconv.FormatFloat(v.DownloadSpeed/1024/1024, 'f', 2, 32),
-            v.colo,
-        })
+        result = append(result, v.toString())
     }
     return result
 }
 
 // 导出结果到CSV文件
 func ExportCsv(data []CloudflareIPData) {
-    if Output == "" || Output == " " || len(data) == 0 {
+    if noOutput() || len(data) == 0 {
         return
     }
     fp, err := os.Create(Output)
@@ -955,13 +949,14 @@ https://github.com/XIU2/CloudflareSpeedTest
     -h
         打印帮助说明
 `
-
     var minDelay, maxDelay, downloadTime int
     var maxLossRate float64
-
+    
+    // 添加所有命令行参数
     flag.IntVar(&Routines, "n", 200, "延迟测速线程数")
     flag.IntVar(&PingTimes, "t", 4, "延迟测速次数")
     flag.IntVar(&TestCount, "dn", 10, "下载测速数量")
+    flag.IntVar(&downloadTime, "dt", 10, "下载测速时间")
     flag.IntVar(&TCPPort, "tp", 443, "指定测速端口")
     flag.StringVar(&URL, "url", defaultURL, "指定测速地址")
     
@@ -969,8 +964,9 @@ https://github.com/XIU2/CloudflareSpeedTest
     flag.IntVar(&HttpingStatusCode, "httping-code", 0, "有效状态代码")
     flag.StringVar(&HttpingCFColo, "cfcolo", "", "匹配指定地区")
     
-    flag.DurationVar(&InputMaxDelay, "tl", 9999*time.Millisecond, "平均延迟上限")
-    flag.DurationVar(&InputMinDelay, "tll", 0, "平均延迟下限")
+    flag.IntVar(&maxDelay, "tl", 9999, "平均延迟上限")
+    flag.IntVar(&minDelay, "tll", 0, "平均延迟下限")
+    flag.Float64Var(&maxLossRate, "tlr", 1, "丢包几率上限")
     flag.Float64Var(&MinSpeed, "sl", 0, "下载速度下限")
     
     flag.IntVar(&PrintNum, "p", 10, "显示结果数量")
@@ -979,25 +975,22 @@ https://github.com/XIU2/CloudflareSpeedTest
     flag.StringVar(&Output, "o", "result.csv", "输出结果文件")
     
     flag.BoolVar(&Disable, "dd", false, "禁用下载测速")
-    flag.BoolVar(&TestAll, "all4", false, "测速全部的 IPv4")
+    flag.BoolVar(&TestAll, "all4", false, "测速全部 IPv4")
     
+    // 添加新的IPv6相关参数
+    flag.BoolVar(&TestMore6, "more6", false, "测试更多 IPv6")
+    flag.BoolVar(&TestLots6, "lots6", false, "测试较多 IPv6")
+    flag.BoolVar(&TestMany6, "many6", false, "测试很多 IPv6")
+    flag.BoolVar(&TestSome6, "some6", false, "测试一些 IPv6")
+    flag.BoolVar(&TestMany4, "many4", false, "测试一点 IPv4")
+    
+    // 添加版本参数
     flag.BoolVar(&printVersion, "v", false, "打印程序版本")
-    flag.IntVar(&downloadTime, "dt", 10, "下载测速时间")
-    flag.Float64Var(&maxLossRate, "tlr", 1, "丢包几率上限")
-
-    // 添加新的命令行参数
-    flag.BoolVar(&TestMore6, "more6", false, "测试更多 IPv6 (2^18)")
-    flag.BoolVar(&TestLots6, "lots6", false, "测试较多 IPv6 (2^16)")
-    flag.BoolVar(&TestMany6, "many6", false, "测试很多 IPv6 (2^12)")
-    flag.BoolVar(&TestSome6, "some6", false, "测试一些 IPv6 (2^8)")
-    flag.BoolVar(&TestMany4, "many4", false, "测试一点 IPv4 (2^12)")
     
-    // v4/v6 具体数量指定
-    var v4Param, v6Param string
-    flag.StringVar(&v4Param, "v4", "", "指定 IPv4 测试数量 (2^n±m)")
-    flag.StringVar(&v6Param, "v6", "", "指定 IPv6 测试数量 (2^n±m)")
-    
+    // 设置帮助信息
     flag.Usage = func() { fmt.Print(help) }
+    
+    // 解析命令行参数
     flag.Parse()
     
     checkDownloadDefault()
@@ -1222,15 +1215,17 @@ func TestDownloadSpeed(ipSet PingDelaySet) (speedSet DownloadSpeedSet) {
         TestCount = testNum
     }
 
-    fmt.Printf("开始下载测速（下限：%.2f MB/s, 数量：%d, 队列：%d）\n", MinSpeed, TestCount, testNum)
+    fmt.Printf("\n开始下载测速（下限：%.2f MB/s, 数量：%d, 队列：%d）\n", MinSpeed, TestCount, testNum)
     bar := NewBar(TestCount, "", "")
+    speedTracker := NewSpeedTracker()
     
     for i := 0; i < testNum; i++ {
-        speed := downloadHandler(shuffledIPs[i].IP, bar, NewSpeedTracker())
+        speed := downloadHandler(shuffledIPs[i].IP, bar, speedTracker)
         shuffledIPs[i].DownloadSpeed = speed
         if speed >= MinSpeed*1024*1024 {
-            bar.Grow(1, "")
             speedSet = append(speedSet, shuffledIPs[i])
+            // 更新进度条,显示实时总带宽
+            bar.Grow(1, fmt.Sprintf("%.2f", speedTracker.GetTotalSpeed()/1024/1024))
             if len(speedSet) == TestCount {
                 break
             }
