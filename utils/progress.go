@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/cheggaaa/pb/v3"
-	"github.com/XIU2/CloudflareSpeedTest/task"
+	"github.com/GuangYu-yu/CloudflareSpeedTest/task"
 )
 
 type Bar struct {
