@@ -78,14 +78,6 @@ func ExportCsv(data []CloudflareIPData) {
 		return
 	}
 	
-	// 在导出前获取所有 IP 的数据中心信息
-	p := &task.Ping{}
-	for i := range data {
-		if data[i].datacenter == "" {
-			data[i].datacenter = p.getColo(data[i].IP)
-		}
-	}
-	
 	fp, err := os.Create(Output)
 	if err != nil {
 		log.Fatalf("创建文件[%s]失败：%v", Output, err)
