@@ -12,12 +12,35 @@ jobs:
         uses: actions/checkout@v4  
 
       - name: 删除旧版本
-        uses: dev-drprasad/delete-older-releases@v0.3.2
+        uses: actions/github-script@v7
         with:
-          keep_latest: 0  # 设置为 0 表示删除所有旧版本
-          delete_tags: true  # 同时删除关联的标签
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const releases = await github.rest.repos.listReleases({
+              owner,
+              repo
+            });
+            
+            for (const release of releases.data) {
+              await github.rest.repos.deleteRelease({
+                owner,
+                repo,
+                release_id: release.id
+              });
+              
+              if (release.tag_name) {
+                try {
+                  await github.rest.git.deleteRef({
+                    owner,
+                    repo,
+                    ref: `tags/${release.tag_name}`
+                  });
+                } catch (e) {
+                  console.log(`Failed to delete tag ${release.tag_name}: ${e}`);
+                }
+              }
+            }
 
       - name: 设置 Go 环境  
         uses: actions/setup-go@v5
