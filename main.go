@@ -79,11 +79,11 @@ var (
     v6MaxCount int = 0  // IPv6 最大测试数量
     
     // IPv6 测试相关
-    TestMore6 bool
-    TestLots6 bool
-    TestMany6 bool
-    TestSome6 bool
-    TestMany4 bool
+    TestMore6 bool // 测试更多 IPv6 (2^18 = 262144)
+    TestLots6 bool // 测试较多 IPv6 (2^16 = 65536)
+    TestMany6 bool // 测试很多 IPv6 (2^12 = 4096)
+    TestSome6 bool // 测试一些 IPv6 (2^8 = 256)
+    TestMany4 bool // 测试一点 IPv4 (2^12 = 4096)
     
     // 测试数量计算相关
     v4Power int
@@ -122,7 +122,10 @@ var (
         Bold(true).
         Foreground(lipgloss.Color("#00ff00")).
         Border(lipgloss.RoundedBorder()).
-        Padding(0, 1)
+        Padding(0, 1).
+        Align(lipgloss.Center).  // 添加居中对齐
+        Width(50).               // 设置最小宽度
+        MaxWidth(100)            // 设置最大宽度
 
     // 子标题样式 - 如"开始测速"等
     subtitleStyle = lipgloss.NewStyle().
@@ -160,7 +163,15 @@ var (
 
 // 美化打印函数
 func printTitle(format string, a ...interface{}) {
-    fmt.Println(titleStyle.Render(fmt.Sprintf(format, a...)))
+    title := fmt.Sprintf(format, a...)
+    // 计算标题实际宽度
+    width := lipgloss.Width(title) + 4  // +4 是为了给边框留出空间
+    
+    // 动态设置样式宽度
+    style := titleStyle.Copy().
+        Width(width)
+    
+    fmt.Printf("\n%s\n", style.Render(title))
 }
 
 func printSubtitle(format string, a ...interface{}) {
@@ -182,9 +193,9 @@ func printError(format string, a ...interface{}) {
 // 修改进度条样式
 func NewBar(count int, MyStrStart, MyStrEnd string) *Bar {
 	p := progress.New(
-		progress.WithGradient("#7571F9", "#9681EB"),  // 紫色渐变
-		progress.WithWidth(40),                        // 进度条宽度
-		progress.WithDefaultGradient(),                // 默认渐变色
+		progress.WithGradient("#7571F9", "#9681EB"),
+		progress.WithWidth(40),
+		progress.WithAnimatedSpinner(),
 	)
 	
 	return &Bar{
@@ -193,6 +204,7 @@ func NewBar(count int, MyStrStart, MyStrEnd string) *Bar {
 		message:  MyStrStart,
 	}
 }
+
 func (b *Bar) Grow(num int, MyStrVal string) {
 	b.current += num
 	b.message = MyStrVal
@@ -359,6 +371,17 @@ func (r *IPRanges) chooseIPv6() {
     maxIPs := 1 << 8 // 默认测试 256 个 IPv6
     if v6MaxCount > 0 {
         maxIPs = v6MaxCount
+    } else {
+        switch {
+        case TestMore6:
+            maxIPs = 1 << 18 // 262144
+        case TestLots6:
+            maxIPs = 1 << 16 // 65536
+        case TestMany6:
+            maxIPs = 1 << 12 // 4096
+        case TestSome6:
+            maxIPs = 1 << 8  // 256
+        }
     }
     
     count := 0
@@ -975,7 +998,7 @@ https://github.com/XIU2/CloudflareSpeedTest
     flag.StringVar(&Output, "o", "result.csv", "输出结果文件")
     
     flag.BoolVar(&Disable, "dd", false, "禁用下载测速")
-    flag.BoolVar(&TestAll, "all4", false, "测速全部 IPv4")
+    flag.BoolVar(&TestAll, "all4", false, "测速全部的IPv4(默认 每个 /24 段随机测速一个 IP)")
     
     // 添加新的IPv6相关参数
     flag.BoolVar(&TestMore6, "more6", false, "测试更多 IPv6")
@@ -1362,7 +1385,7 @@ func calculateMaxCount() {
     // 计算 IPv4 最大测试数量
     v4Counts := make([]int, 0)
     
-    // 添加 -all4 的数量 (使用最大允许值替代 2^32)
+    // 添加 -all4 的数量
     if TestAll {
         v4Counts = append(v4Counts, maxTotalIPs) // 使用预定义的最大IP数量
     }
