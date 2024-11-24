@@ -56,9 +56,9 @@ jobs:
           mkdir -p build
           mkdir -p binaries
 
-          # 安装压缩工具
+          # 安装 UPX
           sudo apt-get update
-          sudo apt-get install -y upx zstd
+          sudo apt-get install -y upx
 
           # 构建并压缩函数
           build_and_compress() {
@@ -67,16 +67,8 @@ jobs:
             local SUFFIX=$3
             local NAME="CloudflareST${SUFFIX}"
             
-            # 使用更激进的编译优化
-            env GOOS=$OS GOARCH=$ARCH CGO_ENABLED=0 \
-              go build -ldflags="-s -w -extldflags=-static" \
-              -trimpath -a \
-              -gcflags="all=-l=4" \
-              -o "$NAME"
-            
-            # UPX 极限压缩
-            upx --best --ultra-brute "$NAME" || true
-            
+            env GOOS=$OS GOARCH=$ARCH go build -ldflags="-s -w" -o "$NAME"
+            upx --best "$NAME" || true
             tar -czf "build/CloudflareST_${OS}_${ARCH}.tar.gz" "$NAME"
             cp "$NAME" "binaries/CloudflareST_${OS}_${ARCH}"
             rm "$NAME"
