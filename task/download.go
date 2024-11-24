@@ -216,7 +216,6 @@ func downloadHandler(ip *net.IPAddr) float64 {
 	defer updateBandwidth(0)
 	return e.Value() / (Timeout.Seconds() / 120)
 }
-
 // 获取当前总带宽 (MB/s)
 func GetCurrentBandwidth() float64 {
 	return float64(atomic.LoadInt64(&currentBandwidth)) / 1024 / 1024
@@ -226,3 +225,4 @@ func GetCurrentBandwidth() float64 {
 func updateBandwidth(speed int64) {
 	atomic.StoreInt64(&currentBandwidth, speed)
 }
+
