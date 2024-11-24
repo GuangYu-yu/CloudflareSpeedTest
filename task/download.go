@@ -175,7 +175,7 @@ func downloadHandler(ip *net.IPAddr) float64 {
 			// 计算当前速度并更新总带宽
 			currentSpeed := float64(contentRead - lastContentRead)
 			e.Add(currentSpeed)
-			updateBandwidth(int64(e.Value() / (Timeout.Seconds() / 120)))
+			utils.UpdateBandwidth(int64(e.Value() / (Timeout.Seconds() / 120)))
 			lastContentRead = contentRead
 		}
 		// 如果超出下载测速时间，则退出循环（终止测速）
@@ -198,17 +198,7 @@ func downloadHandler(ip *net.IPAddr) float64 {
 	}
 
 	// 测试结束后清零带宽
-	defer updateBandwidth(0)
+	defer utils.UpdateBandwidth(0)
 	return e.Value() / (Timeout.Seconds() / 120)
-}
-
-// 获取当前总带宽 (MB/s)
-func GetCurrentBandwidth() float64 {
-	return float64(atomic.LoadInt64(&currentBandwidth)) / 1024 / 1024
-}
-
-// 更新当前总带宽
-func updateBandwidth(speed int64) {
-	atomic.StoreInt64(&currentBandwidth, speed)
 }
 
