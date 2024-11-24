@@ -705,7 +705,7 @@ func (p *Ping) start(ip *net.IPAddr) {
 }
 
 // HTTP测速相关
-func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration) {
+func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration, string) {
 	hc := http.Client{
 		Timeout: time.Second * 2,
 		Transport: &http.Transport{
@@ -716,26 +716,27 @@ func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration) {
 		},
 	}
 
+	var colo string
 	// 先访问一次获得 HTTP 状态码 及 Cloudflare Colo
 	{
 		requ, err := http.NewRequest(http.MethodHead, URL, nil)
 		if err != nil {
-			return 0, 0
+			return 0, 0, ""
 		}
 		requ.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.80 Safari/537.36")
 		resp, err := hc.Do(requ)
 		if err != nil {
-			return 0, 0
+			return 0, 0, ""
 		}
 		defer resp.Body.Close()
 
 		if HttpingStatusCode == 0 || HttpingStatusCode < 100 && HttpingStatusCode > 599 {
 			if resp.StatusCode != 200 && resp.StatusCode != 301 && resp.StatusCode != 302 {
-				return 0, 0
+				return 0, 0, ""
 			}
 		} else {
 			if resp.StatusCode != HttpingStatusCode {
-				return 0, 0
+				return 0, 0, ""
 			}
 		}
 
@@ -748,9 +749,9 @@ func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration) {
 				}
 				return resp.Header.Get("x-amz-cf-pop")
 			}()
-			colo := p.getColo(cfRay)
+			colo = p.getColo(cfRay)
 			if colo == "" {
-				return 0, 0
+				return 0, 0, ""
 			}
 		}
 	}
@@ -762,7 +763,7 @@ func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration) {
 		requ, err := http.NewRequest(http.MethodHead, URL, nil)
 		if err != nil {
 			log.Fatal("意外的错误，请报告：", err)
-			return 0, 0
+			return 0, 0, ""
 		}
 		requ.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.80 Safari/537.36")
 		if i == PingTimes-1 {
@@ -780,7 +781,7 @@ func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration) {
 		delay += duration
 	}
 
-	return success, delay
+	return success, delay, colo
 }
 
 func MapColoMap() *sync.Map {
@@ -829,9 +830,9 @@ func (p *Ping) tcping(ip *net.IPAddr) (bool, time.Duration) {
 	return true, duration
 }
 
-func (p *Ping) checkConnection(ip *net.IPAddr) (recv int, totalDelay time.Duration) {
+func (p *Ping) checkConnection(ip *net.IPAddr) (recv int, totalDelay time.Duration, colo string) {
 	if Httping {
-		recv, totalDelay = p.httping(ip)
+		recv, totalDelay, colo = p.httping(ip)
 		return
 	}
 	for i := 0; i < PingTimes; i++ {
@@ -857,7 +858,8 @@ func (p *Ping) tcpingHandler(ip *net.IPAddr) {
 	colo := ""
 	if Httping {
 		// 从 HTTP 响应中获取机场码
-		colo = p.getColo(cfRay)
+		// 注意：机场码应该在 httping 函数中获取并返回
+		_, _, colo = p.httping(ip)  // 修改 httping 函数返回值
 	}
 	
 	data := &CloudflareIPData{
