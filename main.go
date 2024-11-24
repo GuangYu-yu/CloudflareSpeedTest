@@ -1031,10 +1031,10 @@ https://github.com/XIU2/CloudflareSpeedTest
         Routines = maxRoutine
     }
 
-    // 检测是否支持彩色输出
+    // 修改终端颜色支持检测部分
     if !term.IsTerminal(int(os.Stdout.Fd())) {
         // 不支持时禁用颜色
-        lipgloss.SetColorProfile(lipgloss.ColorProfile(0))
+        lipgloss.SetNoColor(true)
     }
 
     // 解析 v4/v6 参数
