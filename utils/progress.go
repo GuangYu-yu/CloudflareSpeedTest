@@ -27,14 +27,14 @@ func NewBar(count int, MyStrStart, MyStrEnd string) *Bar {
 	return &Bar{pb: bar, isDownload: isDownload}
 }
 
-func (b *Bar) Grow(num int, MyStrVal string) {
+func (b *Bar) Grow(num int, val string) {
 	if b.isDownload {
 		// 下载测速时显示带宽
-		bandwidth := fmt.Sprintf("%.2f MB/s", task.GetCurrentBandwidth())
+		bandwidth := fmt.Sprintf("%.2f MB/s", GetCurrentBandwidth())
 		b.pb.Set("Bandwidth", bandwidth).Add(num)
 	} else {
 		// 延迟测速时显示可用数量
-		b.pb.Set("MyStr", MyStrVal).Add(num)
+		b.pb.Set("MyStr", val).Add(num)
 	}
 }
 
