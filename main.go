@@ -97,6 +97,8 @@ type Bar struct {
 	startTime  time.Time
 	lastUpdate time.Time
 	bandwidth  float64
+	blocks     []string // 用于轮播的方块字符
+	blockIndex int     // 当前方块索引
 }
 
 func NewBar(total int, prefix string, suffix string) *Bar {
@@ -105,6 +107,7 @@ func NewBar(total int, prefix string, suffix string) *Bar {
 		prefix:    prefix,
 		suffix:    suffix,
 		startTime: time.Now(),
+		blocks:    []string{"█", "▇", "▆", "▅", "▄", "▃", "▂", "▁"},
 	}
 }
 
@@ -148,21 +151,24 @@ func (b *Bar) Grow(n int, suffix string) {
 			filled = barWidth
 		}
 		
-		blocks := []string{"█", "▇", "▆", "▅", "▄", "▃", "▂", "▁"}
+		// 更新动画方块
+		b.blockIndex = (b.blockIndex + 1) % len(b.blocks)
+		block := b.blocks[b.blockIndex]
 		
 		var bar string
 		if filled < barWidth {
 			bar = strings.Repeat("█", filled)
 			
 			elapsed := time.Since(b.startTime).Seconds()
-			blockIndex := int(elapsed*15) % len(blocks)
-			bar += blocks[blockIndex]
+			blockIndex := int(elapsed*15) % len(b.blocks)
+			bar += b.blocks[blockIndex]
 			
 			bar += strings.Repeat("░", barWidth-filled-1)
 		} else {
 			bar = strings.Repeat("█", barWidth)
 		}
 		
+		// 显示进度和网速
 		if b.bandwidth > 0 {
 			fmt.Printf("\r%d / %d [%s] %.2f MB/s",
 				b.current,
@@ -1181,16 +1187,15 @@ func TestDownloadSpeed(ipSet PingDelaySet) (speedSet DownloadSpeedSet) {
 		return
 	}
 
+	// 使用可用IP数量作为队列
+	availableIPs := len(ipSet)
 	testNum := TestCount
-	if len(ipSet) < TestCount || MinSpeed > 0 { // 如果IP数量小于下载测速数量,或设置了下载速度下限,则测试所有IP
-		testNum = len(ipSet)
+	if MinSpeed > 0 {
+		testNum = availableIPs // 如果设置了速度下限,测试所有可用IP
 	}
-	if testNum < TestCount {
-		TestCount = testNum
-	}
-
-	fmt.Printf("开始下载测速（下限：%.2f MB/s, 数量：%d, 队列：%d）\n", MinSpeed, TestCount, testNum)
-	bar := NewBar(TestCount, "", "")
+	
+	fmt.Printf("开始下载测速（下限：%.2f MB/s, 数量：%d, 队列：%d）\n", MinSpeed, TestCount, availableIPs)
+	bar := NewBar(TestCount, "", fmt.Sprintf("可用：%d", availableIPs))
 	
 	// 测试所有指定数量的IP
 	for i := 0; i < testNum; i++ {
