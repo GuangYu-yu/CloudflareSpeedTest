@@ -1059,8 +1059,12 @@ func main() {
     fmt.Println()
 
     // 开始延迟测速
+    mode := "TCP"
+    if Httping {
+        mode = "HTTP"
+    }
     printSubtitle("开始延迟测速（模式：%s, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f）", 
-        Httping ? "HTTP" : "TCP",
+        mode,
         TCPPort,
         InputMinDelay.Milliseconds(),
         InputMaxDelay.Milliseconds(),
