@@ -1033,8 +1033,15 @@ https://github.com/XIU2/CloudflareSpeedTest
 
     // 修改终端颜色支持检测部分
     if !term.IsTerminal(int(os.Stdout.Fd())) {
-        // 不支持时禁用颜色
-        lipgloss.SetNoColor(true)
+        // 不支持时禁用颜色 - 通过设置所有样式为无色
+        titleStyle = titleStyle.UnsetForeground()
+        subtitleStyle = subtitleStyle.UnsetForeground()
+        infoStyle = infoStyle.UnsetForeground()
+        warnStyle = warnStyle.UnsetForeground()
+        errorStyle = errorStyle.UnsetForeground()
+        headerStyle = headerStyle.UnsetForeground()
+        dataStyle = dataStyle.UnsetForeground()
+        versionStyle = versionStyle.UnsetForeground()
     }
 
     // 解析 v4/v6 参数
