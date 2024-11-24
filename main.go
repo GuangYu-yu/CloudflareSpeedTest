@@ -717,7 +717,6 @@ func downloadHandler(ip *net.IPAddr, bar *Bar, st *SpeedTracker) float64 {
     }
 
     timeStart := time.Now()
-    timeEnd := timeStart.Add(Timeout)
 
     contentLength := response.ContentLength
     buffer := make([]byte, 1024)
