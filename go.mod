@@ -4,5 +4,9 @@ go 1.16
 
 require (
 	github.com/VividCortex/ewma v1.1.1
-	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211
+	github.com/cheggaaa/pb/v3 v3.1.4
+	github.com/gookit/color v1.5.4
+	github.com/charmbracelet/bubbles v0.14.0
+	github.com/charmbracelet/bubbletea v0.21.0
+	github.com/charmbracelet/lipgloss v0.5.0
 )
