@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 	
-	"github.com/XIU2/CloudflareSpeedTest/task"
+	"github.com/GuangYu-yu/CloudflareSpeedTest/task"
 )
 
 const (
