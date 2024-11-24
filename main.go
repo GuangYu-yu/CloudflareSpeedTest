@@ -1222,3 +1222,74 @@ func downloadHandler(ip *net.IPAddr) float64 {
 	}
 	return e.Value() / (Timeout.Seconds() / 120)
 }
+
+// IP范围相关结构体
+type IPRanges struct {
+    ips        []*net.IPAddr
+    ipNet      *net.IPNet
+    firstIP    net.IP
+    mask       string
+}
+
+func newIPRanges() *IPRanges {
+    return &IPRanges{
+        ips: make([]*net.IPAddr, 0),
+    }
+}
+
+func (r *IPRanges) parseCIDR(ip string) {
+    // 尝试解析CIDR
+    _, ipNet, err := net.ParseCIDR(ip)
+    if err != nil {
+        // 如果解析CIDR失败，尝试解析单个IP
+        if ipAddr := net.ParseIP(ip); ipAddr != nil {
+            ipNet = &net.IPNet{
+                IP:   ipAddr,
+                Mask: net.CIDRMask(32, 32),
+            }
+            if ipAddr.To4() == nil {
+                ipNet.Mask = net.CIDRMask(128, 128)
+            }
+        } else {
+            log.Fatal("解析IP失败:", ip)
+        }
+    }
+
+    r.ipNet = ipNet
+    r.firstIP = make([]byte, len(ipNet.IP))
+    copy(r.firstIP, ipNet.IP)
+    r.mask = net.IP(ipNet.Mask).String()
+}
+
+func (r *IPRanges) appendIP(ip net.IP) {
+    ipAddr := &net.IPAddr{
+        IP: make([]byte, len(ip)),
+    }
+    copy(ipAddr.IP, ip)
+    r.ips = append(r.ips, ipAddr)
+}
+
+func (r *IPRanges) appendIPv4(lastByte byte) {
+    ipAddr := &net.IPAddr{
+        IP: make([]byte, 4),
+    }
+    copy(ipAddr.IP, r.firstIP.To4())
+    ipAddr.IP[3] = lastByte
+    r.ips = append(r.ips, ipAddr)
+}
+
+func (r *IPRanges) getIPRange() (byte, byte) {
+    minIP := r.firstIP.To4()[3]
+    maxIP := byte(0)
+    switch r.mask {
+    case "255.255.255.0":
+        maxIP = 255
+    case "255.255.0.0":
+        maxIP = 255
+    case "255.0.0.0":
+        maxIP = 255
+    default:
+        maxIP = minIP
+    }
+    return minIP, maxIP - minIP
+}
