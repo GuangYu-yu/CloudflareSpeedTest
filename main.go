@@ -1367,9 +1367,9 @@ func calculateMaxCount() {
     // 计算 IPv4 最大测试数量
     v4Counts := make([]int, 0)
     
-    // 添加 -all4 的数量 (2^32)
+    // 添加 -all4 的数量 (使用最大允许值替代 2^32)
     if TestAll {
-        v4Counts = append(v4Counts, 1<<32)
+        v4Counts = append(v4Counts, maxTotalIPs) // 使用预定义的最大IP数量
     }
     
     // 添加 -many4 的数量 (2^12)
