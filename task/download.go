@@ -12,7 +12,7 @@ import (
 	"time"
 	"sync/atomic"
 
-	"github.com/XIU2/CloudflareSpeedTest/utils"
+	"github.com/GuangYu-yu/CloudflareSpeedTest/utils"
 	"github.com/VividCortex/ewma"
 )
 
