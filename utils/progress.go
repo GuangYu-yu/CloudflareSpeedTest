@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/cheggaaa/pb/v3"
-	"github.com/GuangYu-yu/CloudflareSpeedTest/task"
 )
 
 type Bar struct {
