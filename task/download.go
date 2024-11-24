@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"sync/atomic"
 
 	"github.com/GuangYu-yu/CloudflareSpeedTest/utils"
 	"github.com/VividCortex/ewma"
@@ -32,8 +31,6 @@ var (
 
 	TestCount = defaultTestNum
 	MinSpeed  = defaultMinSpeed
-
-	currentBandwidth int64 // 原子操作，记录当前总带宽 (bytes/s)
 
 	// 使用 sync.Pool 管理缓冲区
 	bufferPool = sync.Pool{
