@@ -9,8 +9,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/GuangYu-yu/CloudflareSpeedTest/task"
-	"github.com/GuangYu-yu/CloudflareSpeedTest/utils"
+	"github.com/XIU2/CloudflareSpeedTest/task"
+	"github.com/XIU2/CloudflareSpeedTest/utils"
 )
 
 var (
@@ -112,8 +112,17 @@ https://github.com/XIU2/CloudflareSpeedTest
 	flag.StringVar(&utils.Output, "o", "result.csv", "输出结果文件")
 
 	flag.BoolVar(&task.Disable, "dd", false, "禁用下载测速")
-	flag.BoolVar(&task.TestAll, "all4", false, "测速全部 IP")
-
+	flag.BoolVar(&task.TestAll4, "all4", false, "测速全部的 IPv4")
+	flag.BoolVar(&task.More6, "more6", false, "测试更多 IPv6 (2^18 个)")
+	flag.BoolVar(&task.Lots6, "lots6", false, "测试较多 IPv6 (2^16 个)")
+	flag.BoolVar(&task.Many6, "many6", false, "测试很多 IPv6 (2^12 个)")
+	flag.BoolVar(&task.Some6, "some6", false, "测试一些 IPv6 (2^8 个)")
+	flag.BoolVar(&task.Many4, "many4", false, "测试一点 IPv4 (2^12 个)")
+	
+	var v4TestNum, v6TestNum string
+	flag.StringVar(&v4TestNum, "v4", "", "指定 IPv4 测试数量")
+	flag.StringVar(&v6TestNum, "v6", "", "指定 IPv6 测试数量")
+	
 	flag.BoolVar(&printVersion, "v", false, "打印程序版本")
 	flag.Usage = func() { fmt.Print(help) }
 	flag.Parse()
@@ -139,34 +148,22 @@ https://github.com/XIU2/CloudflareSpeedTest
 		os.Exit(0)
 	}
 
-	// 添加新的命令行参数
-	flag.BoolVar(&task.TestAll4, "all4", false, "测速全部的 IPv4")
-	flag.BoolVar(&task.More6, "more6", false, "测试更多 IPv6 (2^18 个)")
-	flag.BoolVar(&task.Lots6, "lots6", false, "测试较多 IPv6 (2^16 个)")
-	flag.BoolVar(&task.Many6, "many6", false, "测试很多 IPv6 (2^12 个)")
-	flag.BoolVar(&task.Some6, "some6", false, "测试一些 IPv6 (2^8 个)")
-	flag.BoolVar(&task.Many4, "many4", false, "测试一点 IPv4 (2^12 个)")
-	
-	var v4TestNum, v6TestNum string
-	flag.StringVar(&v4TestNum, "v4", "", "指定 IPv4 测试数量")
-	flag.StringVar(&v6TestNum, "v6", "", "指定 IPv6 测试数量")
-	
-	// 在 flag.Parse() 后处理测试数量，从多到少排序
-	if v4TestNum != "" { // 自定义数量优先级最高
-		task.IPv4TestNum = task.ParseTestNum(v4TestNum)
-	} else if task.Many4 { // -many4 次之
+	// 处理测试数量
+	if v4TestNum != "" {
+		task.IPv4TestNum = task.ParseTestNum(v4TestNum, true)
+	} else if task.Many4 {
 		task.IPv4TestNum = 4096 // 2^12
 	}
 
-	if v6TestNum != "" { // 自定义数量优先级最高
-		task.IPv6TestNum = task.ParseTestNum(v6TestNum)
-	} else if task.Some6 { // -some6 优先级最高
+	if v6TestNum != "" {
+		task.IPv6TestNum = task.ParseTestNum(v6TestNum, false)
+	} else if task.Some6 {
 		task.IPv6TestNum = 256 // 2^8
-	} else if task.Many6 { // -many6 次之
+	} else if task.Many6 {
 		task.IPv6TestNum = 4096 // 2^12
-	} else if task.Lots6 { // -lots6 再次之
+	} else if task.Lots6 {
 		task.IPv6TestNum = 65536 // 2^16
-	} else if task.More6 { // -more6 优先级最低
+	} else if task.More6 {
 		task.IPv6TestNum = 262144 // 2^18
 	}
 }
