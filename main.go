@@ -66,6 +66,10 @@ var (
 	Output           = "result.csv"
 	PrintNum         = 10
 	ShowAirport      = false
+	
+	// 格式化字符串
+	headFormat string
+	dataFormat string
 )
 
 // 添加常量定义
@@ -400,15 +404,21 @@ func printResults(s interface{}, resultType string) {
 		}
 	}
 	
-	fmt.Printf(headFormat, getHeaders()...)
+	headers := getHeaders()
+	headerInterfaces := make([]interface{}, len(headers))
+	for i, v := range headers {
+		headerInterfaces[i] = v
+	}
+	fmt.Printf(headFormat, headerInterfaces...)
+	
 	for i := 0; i < PrintNum; i++ {
 		fmt.Printf(dataFormat, 
 			dateString[i][0],  // IP
 			dateString[i][1],  // 已发送
-			dateString[i][2],  // 已接收
-			dateString[i][3],  // 丢包率
-			dateString[i][4],  // 平均延迟
-			dateString[i][5],  // 下载速度
+			 dateString[i][2],  // 已接收
+			 dateString[i][3],  // 丢包率
+			 dateString[i][4],  // 平均延迟
+			 dateString[i][5],  // 下载速度
 		)
 	}
 	
@@ -447,7 +457,12 @@ func (s DownloadSpeedSet) PrintProgress() {
 	
 	// 打印新的内容
 	if len(s) == 1 {
-		fmt.Printf(headFormat, getHeaders()...)
+		headers := getHeaders()
+		headerInterfaces := make([]interface{}, len(headers))
+		for i, v := range headers {
+			headerInterfaces[i] = v
+		}
+		fmt.Printf(headFormat, headerInterfaces...)
 	}
 	
 	data := convertToString(s)
