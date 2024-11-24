@@ -632,46 +632,38 @@ func checkPingDefault() {
 }
 
 func (p *Ping) RunBatch(targetCount int) (PingDelaySet, bool) {
-	if p.position >= len(p.ips) {
-		return nil, false
+	// 只在第一次运行时初始化
+	if p.position == 0 {
+		mode := "TCP"
+		if Httping {
+			mode = "HTTP"
+		}
+		fmt.Printf("开始延迟测速（模式：%s, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f)\n",
+			mode,
+			TCPPort,
+			InputMinDelay.Milliseconds(),
+			InputMaxDelay.Milliseconds(),
+			InputMaxLossRate,
+		)
+
+		// 初始化通道和结果集
+		p.control = make(chan bool, Routines)
+		p.csv = make(PingDelaySet, 0)
+
+		// 一次性启动所有IP的测试
+		for _, ip := range p.ips {
+			p.wg.Add(1)
+			p.control <- false
+			go p.start(ip)
+		}
+		p.wg.Wait()
+
+		// 排序结果
+		sort.Sort(p.csv)
+		p.position = len(p.ips)
 	}
 
-	end := p.position + targetCount
-	if end > len(p.ips) {
-		end = len(p.ips)
-	}
-
-	currentBatch := p.ips[p.position:end]
-	p.csv = make(PingDelaySet, 0)
-
-	if len(currentBatch) == 0 {
-		return nil, false
-	}
-
-	mode := "TCP"
-	if Httping {
-		mode = "HTTP"
-	}
-	fmt.Printf("开始延迟测速（模式：%s, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f)\n",
-		mode,
-		TCPPort,
-		InputMinDelay.Milliseconds(),
-		InputMaxDelay.Milliseconds(),
-		InputMaxLossRate,
-	)
-
-	for _, ip := range currentBatch {
-		p.wg.Add(1)
-		p.control <- false
-		go p.start(ip)
-	}
-	p.wg.Wait()
-
-	p.position = end
-	hasMore := p.position < len(p.ips)
-
-	sort.Sort(p.csv)
-	return p.csv, hasMore
+	return p.csv, false
 }
 
 func (p *Ping) start(ip *net.IPAddr) {
