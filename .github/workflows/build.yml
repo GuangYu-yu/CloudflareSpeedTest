@@ -56,83 +56,50 @@ jobs:
           mkdir -p build
           mkdir -p binaries
 
-          # Linux  
-          # AMD64  
-          env GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o CloudflareST
-          tar -czf build/CloudflareST_linux_amd64.tar.gz CloudflareST
-          cp CloudflareST binaries/CloudflareST_linux_amd64
-          rm CloudflareST
-          # 386  
-          env GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o CloudflareST
-          tar -czf build/CloudflareST_linux_386.tar.gz CloudflareST
-          cp CloudflareST binaries/CloudflareST_linux_386
-          rm CloudflareST
-          # ARM64  
-          env GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o CloudflareST
-          tar -czf build/CloudflareST_linux_arm64.tar.gz CloudflareST
-          cp CloudflareST binaries/CloudflareST_linux_arm64
-          rm CloudflareST
-          # ARM  
-          env GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o CloudflareST
-          tar -czf build/CloudflareST_linux_arm.tar.gz CloudflareST
-          cp CloudflareST binaries/CloudflareST_linux_arm
-          rm CloudflareST
-          # MIPS  
+          # 安装 UPX
+          sudo apt-get update
+          sudo apt-get install -y upx
+
+          # 构建并压缩函数
+          build_and_compress() {
+            local OS=$1
+            local ARCH=$2
+            local SUFFIX=$3
+            local NAME="CloudflareST${SUFFIX}"
+            
+            env GOOS=$OS GOARCH=$ARCH go build -ldflags="-s -w" -o "$NAME"
+            upx --best "$NAME" || true
+            tar -czf "build/CloudflareST_${OS}_${ARCH}.tar.gz" "$NAME"
+            cp "$NAME" "binaries/CloudflareST_${OS}_${ARCH}"
+            rm "$NAME"
+          }
+
+          # Linux
+          build_and_compress linux amd64
+          build_and_compress linux 386
+          build_and_compress linux arm64
+          build_and_compress linux arm
+          
+          # MIPS
           env GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags="-s -w" -o CloudflareST
+          upx --best CloudflareST || true
           tar -czf build/CloudflareST_linux_mips.tar.gz CloudflareST
           cp CloudflareST binaries/CloudflareST_linux_mips
           rm CloudflareST
-          # MIPSLE  
+          
           env GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags="-s -w" -o CloudflareST
+          upx --best CloudflareST || true
           tar -czf build/CloudflareST_linux_mipsle.tar.gz CloudflareST
           cp CloudflareST binaries/CloudflareST_linux_mipsle
           rm CloudflareST
 
-          # Windows  
-          # AMD64  
-          env GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o CloudflareST.exe
-          tar -czf build/CloudflareST_windows_amd64.tar.gz CloudflareST.exe
-          cp CloudflareST.exe binaries/CloudflareST_windows_amd64
-          rm CloudflareST.exe
-          # 386  
-          env GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o CloudflareST.exe
-          tar -czf build/CloudflareST_windows_386.tar.gz CloudflareST.exe
-          cp CloudflareST.exe binaries/CloudflareST_windows_386
-          rm CloudflareST.exe
+          # Windows
+          build_and_compress windows amd64 .exe
+          build_and_compress windows 386 .exe
 
-          # macOS  
-          # AMD64  
-          env GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o CloudflareST
-          tar -czf build/CloudflareST_darwin_amd64.tar.gz CloudflareST
-          cp CloudflareST binaries/CloudflareST_darwin_amd64
-          rm CloudflareST
-          # ARM64  
-          env GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o CloudflareST
-          tar -czf build/CloudflareST_darwin_arm64.tar.gz CloudflareST
-          cp CloudflareST binaries/CloudflareST_darwin_arm64
-          rm CloudflareST
-
-      - name: 安装 UPX  
-        run: |  
-          sudo apt-get update  
-          sudo apt-get install -y upx  
-
-      - name: 使用 UPX 压缩二进制文件  
-        run: |  
-          cd build
-          mkdir temp
-          for file in *.tar.gz; do
-            tar -xzf "$file" -C temp
-            if [ -f "temp/CloudflareST" ]; then
-              upx --best "temp/CloudflareST" || true
-              tar -czf "$file" -C temp CloudflareST
-            elif [ -f "temp/CloudflareST.exe" ]; then
-              upx --best "temp/CloudflareST.exe" || true
-              tar -czf "$file" -C temp CloudflareST.exe
-            fi
-            rm -rf temp/*
-          done
-          rm -rf temp
+          # macOS
+          build_and_compress darwin amd64
+          build_and_compress darwin arm64
 
       - name: 生成 SHA256 校验和  
         run: |  
@@ -142,36 +109,17 @@ jobs:
       - name: 提交并推送更改
         if: success()
         run: |
-          # 确保 binaries 目录存在
           if [ -d "binaries" ]; then
-            # 配置 git
             git config --local user.email "action@github.com"
             git config --local user.name "GitHub Action"
-            
-            # 设置远程仓库 URL
             git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-            
-            # 拉取最新更改
             git pull origin master --no-rebase
-            
-            # 添加并提交更改
             git add binaries/
-            
-            # 获取当前时间
             current_time=$(date '+%Y/%m/%d %H:%M:%S')
-            
-            # 尝试提交更改
-            if git diff --staged --quiet; then
-              echo "没有需要提交的更改"
-            else
-              # 提交更改
-              git commit -m "Update binaries on ${current_time}"
-              
-              # 推送更改
+            if ! git diff --staged --quiet; then
+              git commit -m "Update compressed binaries on ${current_time}"
               git push
             fi
-          else
-            echo "binaries 目录不存在，跳过提交"
           fi
 
       - name: 上传构建产物  
