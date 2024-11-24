@@ -185,6 +185,7 @@ type CloudflareIPData struct {
 	*PingData
 	lossRate      float32
 	DownloadSpeed float64
+	Colo         string
 }
 
 // 计算丢包率
@@ -197,13 +198,14 @@ func (cf *CloudflareIPData) getLossRate() float32 {
 }
 
 func (cf *CloudflareIPData) toString() []string {
-	result := make([]string, 6)
+	result := make([]string, 7)
 	result[0] = cf.IP.String()
 	result[1] = strconv.Itoa(cf.Sended)
 	result[2] = strconv.Itoa(cf.Received)
 	result[3] = strconv.FormatFloat(float64(cf.getLossRate()), 'f', 2, 32)
 	result[4] = strconv.FormatFloat(cf.Delay.Seconds()*1000, 'f', 2, 32)
 	result[5] = strconv.FormatFloat(cf.DownloadSpeed/1024/1024, 'f', 2, 32)
+	result[6] = cf.Colo
 	return result
 }
 
@@ -253,6 +255,13 @@ func (s PingDelaySet) Less(i, j int) bool {
 	if iRate != jRate {
 		return iRate < jRate
 	}
+	
+	// 如果延迟相差在 5ms 以内，进行随机排序
+	if math.Abs(float64(s[i].Delay.Milliseconds() - s[j].Delay.Milliseconds())) <= 5 {
+		// 使用随机数决定顺序
+		return rand.Float64() < 0.5
+	}
+	
 	return s[i].Delay < s[j].Delay
 }
 
@@ -297,7 +306,7 @@ func ExportCsv(data []CloudflareIPData) {
 	}
 	defer fp.Close()
 	w := csv.NewWriter(fp)
-	_ = w.Write([]string{"IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)"})
+	_ = w.Write([]string{"IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)", "机场码"})
 	_ = w.WriteAll(convertToString(data))
 	w.Flush()
 }
@@ -334,19 +343,26 @@ func printResults(s interface{}, resultType string) {
 		PrintNum = len(dateString)
 	}
 	
-	headFormat := "%-16s%-5s%-5s%-5s%-6s%-11s\n"
-	dataFormat := "%-18s%-8s%-8s%-8s%-10s%-15s\n"
+	headFormat := "%-16s%-5s%-5s%-5s%-6s%-11s%-5s\n"
+	dataFormat := "%-18s%-8s%-8s%-8s%-10s%-15s%-5s\n"
 	for i := 0; i < PrintNum; i++ {
 		if len(dateString[i][0]) > 15 {
-			headFormat = "%-40s%-5s%-5s%-5s%-6s%-11s\n"
-			dataFormat = "%-42s%-8s%-8s%-8s%-10s%-15s\n"
+			headFormat = "%-40s%-5s%-5s%-5s%-6s%-11s%-5s\n"
+			dataFormat = "%-42s%-8s%-8s%-8s%-10s%-15s%-5s\n"
 			break
 		}
 	}
 	
-	fmt.Printf(headFormat, "IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)")
+	fmt.Printf(headFormat, "IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)", "机场码")
 	for i := 0; i < PrintNum; i++ {
-		fmt.Printf(dataFormat, dateString[i][0], dateString[i][1], dateString[i][2], dateString[i][3], dateString[i][4], dateString[i][5])
+		fmt.Printf(dataFormat, 
+			dateString[i][0],  // IP
+			dateString[i][1],  // 已发送
+			dateString[i][2],  // 已接收
+			dateString[i][3],  // 丢包率
+			dateString[i][4],  // 平均延迟
+			dateString[i][5],  // 下载速度
+			dateString[i][6])  // 机场码
 	}
 	
 	if !noOutput() {
@@ -362,23 +378,36 @@ func (s DownloadSpeedSet) Print() {
 	printResults(s, "完整测速")
 }
 
-// 添加实时打印方法
+// 修改 DownloadSpeedSet 的 PrintProgress 方法
 func (s DownloadSpeedSet) PrintProgress() {
 	if len(s) == 0 {
 		return
 	}
 	
-	fmt.Print("\033[2K\r")
+	// 清除之前的输出
+	fmt.Print("\033[2K\r") // 清除当前行
 	
+	// 计算需要清除的行数
+	linesToClear := len(s)
+	if len(s) > 1 {
+		linesToClear++ // 加上标题行
+	}
+	
+	// 向上移动并清除之前的所有行
+	for i := 0; i < linesToClear; i++ {
+		fmt.Print("\033[1A\033[2K")
+	}
+	
+	// 打印新的内容
 	if len(s) == 1 {
-		fmt.Printf("%-40s%-8s%-8s%-8s%-10s%-15s\n",
-			"IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)")
+		fmt.Printf("%-40s%-8s%-8s%-8s%-10s%-15s%-5s\n",
+			"IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)", "机场码")
 	}
 	
 	data := convertToString(s)
 	for _, row := range data {
-		fmt.Printf("%-42s%-8s%-8s%-8s%-10s%-15s\n",
-			row[0], row[1], row[2], row[3], row[4], row[5])
+		fmt.Printf("%-42s%-8s%-8s%-8s%-10s%-15s%-5s\n",
+			row[0], row[1], row[2], row[3], row[4], row[5], row[6])
 	}
 }
 
@@ -650,6 +679,9 @@ func (p *Ping) RunBatch(targetCount int) (PingDelaySet, bool) {
 		p.control = make(chan bool, Routines)
 		p.csv = make(PingDelaySet, 0)
 
+		// 初始化随机数种子
+		rand.Seed(time.Now().UnixNano())
+		
 		// 一次性启动所有IP的测试
 		for _, ip := range p.ips {
 			p.wg.Add(1)
@@ -821,21 +853,29 @@ func (p *Ping) tcpingHandler(ip *net.IPAddr) {
 	if recv == 0 {
 		return
 	}
-	data := &PingData{
-		IP:       ip,
-		Sended:   PingTimes,
-		Received: recv,
-		Delay:    totalDelay / time.Duration(recv),
+	
+	colo := ""
+	if Httping {
+		// 从 HTTP 响应中获取机场码
+		colo = p.getColo(cfRay)
+	}
+	
+	data := &CloudflareIPData{
+		PingData: &PingData{
+			IP:       ip,
+			Sended:   PingTimes,
+			Received: recv,
+			Delay:    totalDelay / time.Duration(recv),
+		},
+		Colo: colo,
 	}
 	p.appendIPData(data)
 }
 
-func (p *Ping) appendIPData(data *PingData) {
+func (p *Ping) appendIPData(data *CloudflareIPData) {
 	p.m.Lock()
 	defer p.m.Unlock()
-	p.csv = append(p.csv, CloudflareIPData{
-		PingData: data,
-	})
+	p.csv = append(p.csv, *data)
 }
 
 // IP 范围处理相关代码
