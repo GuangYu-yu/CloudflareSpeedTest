@@ -1,6 +1,6 @@
 module github.com/XIU2/CloudflareSpeedTest
 
-go 1.16
+go 1.20
 
 require (
 	github.com/VividCortex/ewma v1.1.1
