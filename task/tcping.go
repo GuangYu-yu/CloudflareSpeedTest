@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/XIU2/CloudflareSpeedTest/utils"
-	"golang.org/x/sync/errgroup"
-	"context"
 )
 
 const (
@@ -65,40 +63,17 @@ func (p *Ping) Run() utils.PingDelaySet {
 	if len(p.ips) == 0 {
 		return p.csv
 	}
-
 	if Httping {
 		fmt.Printf("开始延迟测速（模式：HTTP, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f)\n", TCPPort, utils.InputMinDelay.Milliseconds(), utils.InputMaxDelay.Milliseconds(), utils.InputMaxLossRate)
 	} else {
 		fmt.Printf("开始延迟测速（模式：TCP, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f)\n", TCPPort, utils.InputMinDelay.Milliseconds(), utils.InputMaxDelay.Milliseconds(), utils.InputMaxLossRate)
 	}
-
-	g, ctx := errgroup.WithContext(context.Background())
-	ipChan := make(chan *net.IPAddr, len(p.ips))
-
-	// 启动工作协程
-	for i := 0; i < Routines; i++ {
-		g.Go(func() error {
-			for ip := range ipChan {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				default:
-					p.tcpingHandler(ip)
-				}
-			}
-			return nil
-		})
-	}
-
-	// 发送任务
 	for _, ip := range p.ips {
-		ipChan <- ip
+		p.wg.Add(1)
+		p.control <- false
+		go p.start(ip)
 	}
-	close(ipChan)
-
-	// 等待所有任务完成
-	_ = g.Wait()
-	
+	p.wg.Wait()
 	p.bar.Done()
 	sort.Sort(p.csv)
 	return p.csv
