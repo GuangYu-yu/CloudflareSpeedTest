@@ -20,11 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/VividCortex/ewma"
-	"github.com/cheggaaa/pb/v3"
-	"github.com/gookit/color"
 	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
 )
@@ -1038,7 +1034,7 @@ https://github.com/XIU2/CloudflareSpeedTest
     // 检测是否支持彩色输出
     if !term.IsTerminal(int(os.Stdout.Fd())) {
         // 不支持时禁用颜色
-        lipgloss.SetColorProfile(lipgloss.NoColorProfile)
+        lipgloss.SetColorProfile(lipgloss.ColorProfile(0))
     }
 
     // 解析 v4/v6 参数
@@ -1435,5 +1431,3 @@ func calculateMaxCount() {
         }
     }
 }
-
-
