@@ -65,6 +65,22 @@ var (
 	InputMaxLossRate = float32(1.0)
 	Output           = "result.csv"
 	PrintNum         = 10
+	ShowAirport      = false
+)
+
+// 添加常量定义
+var (
+	// 基础表头列
+	baseHeaders = []string{
+		"IP 地址",
+		"已发送",
+		"已接收", 
+		"丢包率",
+		"平均延迟",
+		"下载速度 (MB/s)",
+	}
+	// 机场码列
+	airportHeader = "机场码"
 )
 
 // 进度条相关结构和方法
@@ -198,14 +214,26 @@ func (cf *CloudflareIPData) getLossRate() float32 {
 }
 
 func (cf *CloudflareIPData) toString() []string {
-	result := make([]string, 7)
+	if ShowAirport {
+		result := make([]string, 7)
+		result[0] = cf.IP.String()
+		result[1] = strconv.Itoa(cf.Sended)
+		result[2] = strconv.Itoa(cf.Received)
+		result[3] = strconv.FormatFloat(float64(cf.getLossRate()), 'f', 2, 32)
+		result[4] = strconv.FormatFloat(cf.Delay.Seconds()*1000, 'f', 2, 32)
+		result[5] = strconv.FormatFloat(cf.DownloadSpeed/1024/1024, 'f', 2, 32)
+		result[6] = cf.Colo
+		return result
+	}
+	
+	// 不显示机场码时只返回6列
+	result := make([]string, 6)
 	result[0] = cf.IP.String()
 	result[1] = strconv.Itoa(cf.Sended)
 	result[2] = strconv.Itoa(cf.Received)
 	result[3] = strconv.FormatFloat(float64(cf.getLossRate()), 'f', 2, 32)
 	result[4] = strconv.FormatFloat(cf.Delay.Seconds()*1000, 'f', 2, 32)
 	result[5] = strconv.FormatFloat(cf.DownloadSpeed/1024/1024, 'f', 2, 32)
-	result[6] = cf.Colo
 	return result
 }
 
@@ -294,7 +322,15 @@ func noOutput() bool {
 	return Output == "" || Output == " "
 }
 
-// 导出结果到CSV
+// 获取完整表头
+func getHeaders() []string {
+	if ShowAirport {
+		return append(baseHeaders, airportHeader)
+	}
+	return baseHeaders
+}
+
+// 修改 ExportCsv 函数
 func ExportCsv(data []CloudflareIPData) {
 	if noOutput() || len(data) == 0 {
 		return
@@ -306,7 +342,7 @@ func ExportCsv(data []CloudflareIPData) {
 	}
 	defer fp.Close()
 	w := csv.NewWriter(fp)
-	_ = w.Write([]string{"IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)", "机场码"})
+	_ = w.Write(getHeaders())
 	_ = w.WriteAll(convertToString(data))
 	w.Flush()
 }
@@ -343,17 +379,28 @@ func printResults(s interface{}, resultType string) {
 		PrintNum = len(dateString)
 	}
 	
-	headFormat := "%-16s%-5s%-5s%-5s%-6s%-11s%-5s\n"
-	dataFormat := "%-18s%-8s%-8s%-8s%-10s%-15s%-5s\n"
+	if ShowAirport {
+		headFormat = "%-16s%-5s%-5s%-5s%-6s%-11s%-5s\n"
+		dataFormat = "%-18s%-8s%-8s%-8s%-10s%-15s%-5s\n"
+	} else {
+		headFormat = "%-16s%-5s%-5s%-5s%-6s%-11s\n"
+		dataFormat = "%-18s%-8s%-8s%-8s%-10s%-15s\n"
+	}
+	
 	for i := 0; i < PrintNum; i++ {
 		if len(dateString[i][0]) > 15 {
-			headFormat = "%-40s%-5s%-5s%-5s%-6s%-11s%-5s\n"
-			dataFormat = "%-42s%-8s%-8s%-8s%-10s%-15s%-5s\n"
+			if ShowAirport {
+				headFormat = "%-40s%-5s%-5s%-5s%-6s%-11s%-5s\n"
+				dataFormat = "%-42s%-8s%-8s%-8s%-10s%-15s%-5s\n"
+			} else {
+				headFormat = "%-40s%-5s%-5s%-5s%-6s%-11s\n"
+				dataFormat = "%-42s%-8s%-8s%-8s%-10s%-15s\n"
+			}
 			break
 		}
 	}
 	
-	fmt.Printf(headFormat, "IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)", "机场码")
+	fmt.Printf(headFormat, getHeaders()...)
 	for i := 0; i < PrintNum; i++ {
 		fmt.Printf(dataFormat, 
 			dateString[i][0],  // IP
@@ -362,7 +409,7 @@ func printResults(s interface{}, resultType string) {
 			dateString[i][3],  // 丢包率
 			dateString[i][4],  // 平均延迟
 			dateString[i][5],  // 下载速度
-			dateString[i][6])  // 机场码
+		)
 	}
 	
 	if !noOutput() {
@@ -378,7 +425,7 @@ func (s DownloadSpeedSet) Print() {
 	printResults(s, "完整测速")
 }
 
-// 修改 DownloadSpeedSet 的 PrintProgress 方法
+// 修改 PrintProgress 方法
 func (s DownloadSpeedSet) PrintProgress() {
 	if len(s) == 0 {
 		return
@@ -400,8 +447,7 @@ func (s DownloadSpeedSet) PrintProgress() {
 	
 	// 打印新的内容
 	if len(s) == 1 {
-		fmt.Printf("%-40s%-8s%-8s%-8s%-10s%-15s%-5s\n",
-			"IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)", "机场码")
+		fmt.Printf(headFormat, getHeaders()...)
 	}
 	
 	data := convertToString(s)
@@ -439,6 +485,8 @@ https://github.com/XIU2/CloudflareSpeedTest
         有效状态代码；HTTPing 延迟测速时网页返回的有效 HTTP 状态码，仅限一个；(默认 200 301 302)
     -cfcolo HKG,KHH,NRT,LAX,SEA,SJC,FRA,MAD
         匹配指定地区；地区名为当地机场三字码，英文逗号分隔，仅 HTTPing 模式可用；(默认 所有地区)
+    -aprt
+        显示机场码；显示测速结果的机场码；(默认 不显示)
 
     -tl 200
         平均延迟上限；只输出低于指定平均延迟的 IP，各上下限条件可搭配使用；(默认 9999 ms)
@@ -519,6 +567,7 @@ https://github.com/XIU2/CloudflareSpeedTest
 	flag.StringVar(&V6Param, "v6", "", "IPv6 测试数量 (2^n±m)")
 
 	flag.BoolVar(&printVersion, "v", false, "打印程序版本")
+	flag.BoolVar(&ShowAirport, "aprt", false, "显示机场码")
 	flag.Usage = func() { fmt.Print(help) }
 	flag.Parse()
 
@@ -717,7 +766,7 @@ func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration, string) {
 	}
 
 	var colo string
-	// 先访问一次获得 HTTP 状态码 及 Cloudflare Colo
+	// 先访问一次获取 HTTP 状态码和机场码
 	{
 		requ, err := http.NewRequest(http.MethodHead, URL, nil)
 		if err != nil {
@@ -730,6 +779,7 @@ func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration, string) {
 		}
 		defer resp.Body.Close()
 
+		// 检查状态码
 		if HttpingStatusCode == 0 || HttpingStatusCode < 100 && HttpingStatusCode > 599 {
 			if resp.StatusCode != 200 && resp.StatusCode != 301 && resp.StatusCode != 302 {
 				return 0, 0, ""
@@ -742,16 +792,22 @@ func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration, string) {
 
 		io.Copy(ioutil.Discard, resp.Body)
 
-		if HttpingCFColo != "" {
-			cfRay := func() string {
-				if resp.Header.Get("Server") == "cloudflare" {
-					return resp.Header.Get("CF-RAY")
+		// 获取机场码，不论是否指定了地区限制都获取
+		cfRay := func() string {
+			if resp.Header.Get("Server") == "cloudflare" {
+				return resp.Header.Get("CF-RAY") // 示例 cf-ray: 7bd32409eda7b020-SJC
+			}
+			return resp.Header.Get("x-amz-cf-pop") // 示例 X-Amz-Cf-Pop: SIN52-P1
+		}()
+		
+		// 提取三字码
+		if cfRay != "" {
+			colo = OutRegexp.FindString(cfRay)
+			// 如果指定了地区限制，检查是否匹配
+			if HttpingCFColo != "" {
+				if _, ok := HttpingCFColomap.Load(colo); !ok {
+					return 0, 0, ""
 				}
-				return resp.Header.Get("x-amz-cf-pop")
-			}()
-			colo = p.getColo(cfRay)
-			if colo == "" {
-				return 0, 0, ""
 			}
 		}
 	}
@@ -832,20 +888,29 @@ func (p *Ping) tcping(ip *net.IPAddr) (bool, time.Duration) {
 
 func (p *Ping) checkConnection(ip *net.IPAddr) (recv int, totalDelay time.Duration, colo string) {
 	if Httping {
+		// HTTP 模式下总是获取机场码
 		recv, totalDelay, colo = p.httping(ip)
 		return
 	}
+	
+	// TCP 模式：先进行 TCP 测试
 	for i := 0; i < PingTimes; i++ {
 		if ok, delay := p.tcping(ip); ok {
 			recv++
 			totalDelay += delay
 		}
 	}
+	
+	// 只有启用了 -aprt 参数时才获取机场码
+	if ShowAirport && recv > 0 {
+		_, _, colo = p.httping(ip)
+	}
+	
 	return
 }
 
 func (p *Ping) tcpingHandler(ip *net.IPAddr) {
-	recv, totalDelay := p.checkConnection(ip)
+	recv, totalDelay, colo := p.checkConnection(ip)
 	nowAble := len(p.csv)
 	if recv != 0 {
 		nowAble++
@@ -855,13 +920,6 @@ func (p *Ping) tcpingHandler(ip *net.IPAddr) {
 		return
 	}
 	
-	colo := ""
-	if Httping {
-		// 从 HTTP 响应中获取机场码
-		// 注意：机场码应该在 httping 函数中获取并返回
-		_, _, colo = p.httping(ip)  // 修改 httping 函数返回值
-	}
-	
 	data := &CloudflareIPData{
 		PingData: &PingData{
 			IP:       ip,
@@ -869,7 +927,7 @@ func (p *Ping) tcpingHandler(ip *net.IPAddr) {
 			Received: recv,
 			Delay:    totalDelay / time.Duration(recv),
 		},
-		Colo: colo,
+		Colo: colo,  // 使用从 checkConnection 返回的机场码
 	}
 	p.appendIPData(data)
 }
