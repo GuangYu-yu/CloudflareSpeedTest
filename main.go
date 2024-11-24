@@ -1,909 +1,25 @@
 package main
 
 import (
-	"bufio"
-	"context"
-	"encoding/csv"
 	"flag"
 	"fmt"
 	"io"
-	"log"
-	"math/rand"
-	"net"
 	"net/http"
 	"os"
-	"regexp"
 	"runtime"
-	"sort"
-	"strconv"
-	"strings"
-	"sync"
 	"time"
 
-	"github.com/charmbracelet/bubbles/progress"
-	"github.com/charmbracelet/lipgloss"
-	"golang.org/x/term"
+	"github.com/XIU2/CloudflareSpeedTest/task"
+	"github.com/XIU2/CloudflareSpeedTest/utils"
 )
 
-// 全局变量定义
 var (
 	version, versionNew string
-	
-	// IP相关
-	TestAll bool
-	IPFile  = "ip.txt"
-	IPText  string
-	
-	// TCPing相关 
-	Routines    = 200
-	TCPPort     = 443  
-	PingTimes   = 4
-	
-	// 下载测速相关
-	URL         = "https://cf.xiu2.xyz/url"
-	Timeout     = 10 * time.Second
-	Disable     = false
-	TestCount   = 10
-	MinSpeed    = 0.0
-	
-	// HTTPing相关
-	Httping           bool
-	HttpingStatusCode int  
-	HttpingCFColo     string
-	HttpingCFColomap  *sync.Map
-	
-	// CSV输出相关
-	InputMaxDelay    = 9999 * time.Millisecond
-	InputMinDelay    = 0 * time.Millisecond  
-	InputMaxLossRate = float32(1.0)
-	Output           = "result.csv"
-	PrintNum         = 10
-	
-	// 在全局变量定义部分添加
-	v4Param string
-	v6Param string
 )
 
-// 添加新的常量定义
-const (
-    maxV4Power = 16  // 2^16 = 65536
-    maxV6Power = 20  // 2^20 = 1048576
-    maxTotalIPs = 500000 // 最大总IP数
-    delayTolerance = 5 * time.Millisecond // 5ms 以内的延迟差异视为相近
-)
-
-// 添加新的变量定义
-var (
-    // IPv4/IPv6 测试数量相关
-    v4MaxCount int = 0  // IPv4 最大测试数量
-    v6MaxCount int = 0  // IPv6 最大测试数量
-    
-    // IPv6 测试相关
-    TestMore6 bool // 测试更多 IPv6 (2^18 = 262144)
-    TestLots6 bool // 测试较多 IPv6 (2^16 = 65536)
-    TestMany6 bool // 测试很多 IPv6 (2^12 = 4096)
-    TestSome6 bool // 测试一些 IPv6 (2^8 = 256)
-    TestMany4 bool // 测试一点 IPv4 (2^12 = 4096)
-    
-    // 测试数量计算相关
-    v4Power int
-    v4Adjust int
-    v6Power int
-    v6Adjust int
-)
-
-// 基础结构体定义
-type PingData struct {
-	IP       *net.IPAddr
-	Sended   int
-	Received int
-	Delay    time.Duration
-}
-
-type CloudflareIPData struct {
-	*PingData
-	lossRate      float32
-	DownloadSpeed float64
-	colo          string
-}
-
-// 进度条相关
-type Bar struct {
-	progress progress.Model
-	total    int
-	current  int
-	message  string
-}
-
-// 定义更多样式
-var (
-    // 标题样式 - 大标题
-    titleStyle = lipgloss.NewStyle().
-        Bold(true).
-        Foreground(lipgloss.Color("#00ff00")).
-        Border(lipgloss.RoundedBorder()).
-        Padding(0, 1).
-        Align(lipgloss.Center).  // 添加居中对齐
-        Width(50).               // 设置最小宽度
-        MaxWidth(100)            // 设置最大宽度
-
-    // 子标题样式 - 如"开始测速"等
-    subtitleStyle = lipgloss.NewStyle().
-        Foreground(lipgloss.Color("#5555ff")).
-        Italic(true)
-
-    // 信息样式 - 普通提示信息    
-    infoStyle = lipgloss.NewStyle().
-        Foreground(lipgloss.Color("#7571F9"))
-
-    // 警告样式 - 警告信息
-    warnStyle = lipgloss.NewStyle().
-        Foreground(lipgloss.Color("#FFA500"))
-
-    // 错误样式 - 错误信息
-    errorStyle = lipgloss.NewStyle().
-        Foreground(lipgloss.Color("#ff0000")).
-        Bold(true)
-
-    // 结果表头样式
-    headerStyle = lipgloss.NewStyle().
-        Foreground(lipgloss.Color("#00ffff")).
-        Bold(true).
-        PaddingRight(2)
-
-    // 结果数据样式
-    dataStyle = lipgloss.NewStyle().
-        Foreground(lipgloss.Color("#ffff00"))
-
-    // 版本信息样式
-    versionStyle = lipgloss.NewStyle().
-        Foreground(lipgloss.Color("#888888")).
-        Italic(true)
-)
-
-// 美化打印函数
-func printTitle(format string, a ...interface{}) {
-    title := fmt.Sprintf(format, a...)
-    // 计算标题实际宽度
-    width := lipgloss.Width(title) + 4  // +4 是为了给边框留出空间
-    
-    // 动态设置样式宽度
-    style := titleStyle.Copy().
-        Width(width)
-    
-    fmt.Printf("\n%s\n", style.Render(title))
-}
-
-func printSubtitle(format string, a ...interface{}) {
-    fmt.Println(subtitleStyle.Render(fmt.Sprintf(format, a...)))
-}
-
-func printInfo(format string, a ...interface{}) {
-    fmt.Println(infoStyle.Render(fmt.Sprintf(format, a...)))
-}
-
-func printWarn(format string, a ...interface{}) {
-    fmt.Println(warnStyle.Render(fmt.Sprintf(format, a...)))
-}
-
-func printError(format string, a ...interface{}) {
-    fmt.Println(errorStyle.Render(fmt.Sprintf(format, a...)))
-}
-
-// 修改进度条样式
-func NewBar(count int, MyStrStart, MyStrEnd string) *Bar {
-	p := progress.New(
-		progress.WithGradient("#7571F9", "#9681EB"),
-		progress.WithWidth(40),
-		progress.WithDefaultGradient(),
-	)
-	
-	return &Bar{
-		progress: p,
-		total:    count,
-		message:  MyStrStart,
-	}
-}
-
-func (b *Bar) Grow(num int, MyStrVal string) {
-	b.current += num
-	b.message = MyStrVal
-	
-	percent := float64(b.current) / float64(b.total)
-	if percent > 1.0 {
-		percent = 1.0
-	}
-	
-	// 使用 bubbles 内置的进度条渲染
-	prog := b.progress.ViewAs(percent)
-	
-	var w string
-	if MyStrVal == "" {
-		w = fmt.Sprintf("\r%d/%d %s 可用：%d", 
-			b.current, b.total,
-			prog,
-			b.current,
-		)
-	} else {
-		w = fmt.Sprintf("\r%d/%d %s %.2f MB/s",
-			b.current, b.total,
-			prog,
-			b.message,
-		)
-	}
-	
-	fmt.Print(w)
-}
-
-func (b *Bar) Done() {
-	fmt.Println()
-}
-
-// IP处理相关
-func InitRandSeed() {
-	rand.Seed(time.Now().UnixNano())
-}
-
-func isIPv4(ip string) bool {
-	return strings.Contains(ip, ".")
-}
-
-// IP范围结构体
-type IPRanges struct {
-    ips     []*net.IPAddr
-    mask    string
-    firstIP net.IP
-    ipNet   *net.IPNet
-}
-
-func newIPRanges() *IPRanges {
-    return &IPRanges{
-        ips: make([]*net.IPAddr, 0),
-    }
-}
-
-// 修复IP格式
-func (r *IPRanges) fixIP(ip string) string {
-    if i := strings.IndexByte(ip, '/'); i < 0 {
-        if isIPv4(ip) {
-            r.mask = "/32"
-        } else {
-            r.mask = "/128"
-        }
-        ip += r.mask
-    } else {
-        r.mask = ip[i:]
-    }
-    return ip
-}
-
-// 解析CIDR
-func (r *IPRanges) parseCIDR(ip string) {
-    var err error
-    if r.firstIP, r.ipNet, err = net.ParseCIDR(r.fixIP(ip)); err != nil {
-        log.Fatalln("ParseCIDR err", err)
-    }
-}
-
-func (r *IPRanges) appendIPv4(d byte) {
-    r.appendIP(net.IPv4(r.firstIP[12], r.firstIP[13], r.firstIP[14], d))
-}
-
-func (r *IPRanges) appendIP(ip net.IP) {
-    r.ips = append(r.ips, &net.IPAddr{IP: ip})
-}
-
-// 获取IP范围
-func (r *IPRanges) getIPRange() (minIP, hosts byte) {
-    minIP = r.firstIP[15] & r.ipNet.Mask[3]
-    m := net.IPv4Mask(255, 255, 255, 255)
-    for i, v := range r.ipNet.Mask {
-        m[i] ^= v
-    }
-    total, _ := strconv.ParseInt(m.String(), 16, 32)
-    if total > 255 {
-        hosts = 255
-        return
-    }
-    hosts = byte(total)
-    return
-}
-
-// 选择IPv4
-func (r *IPRanges) chooseIPv4() {
-    if r.mask == "/32" {
-        r.appendIP(r.firstIP)
-        return
-    }
-    
-    minIP, hosts := r.getIPRange()
-    maxIPs := int(hosts) + 1 // 默认该CIDR内的IP总数
-
-    // 如果设置了任何 IPv4 数量限制，使用计算好的最小值
-    if v4MaxCount > 0 {
-        if v4MaxCount < maxIPs {
-            maxIPs = v4MaxCount
-        }
-    } else if !TestAll { // 没有设置任何数量限制且不是测试全部IP时，使用默认方式
-        maxIPs = 1 // 每个 /24 段随机测速一个 IP
-    }
-    
-    // 如果需要测试的IP数量小于该CIDR中的所有IP数量
-    if maxIPs < int(hosts)+1 {
-        // 生成所有可能的IP
-        allIPs := make([]byte, int(hosts)+1)
-        for i := range allIPs {
-            allIPs[i] = byte(i)
-        }
-        // 随机打乱
-        rand.Shuffle(len(allIPs), func(i, j int) {
-            allIPs[i], allIPs[j] = allIPs[j], allIPs[i]
-        })
-        // 只取需要的数量
-        for i := 0; i < maxIPs; i++ {
-            r.appendIPv4(allIPs[i] + minIP)
-        }
-    } else {
-        // 测试所有IP
-        for i := 0; i <= int(hosts); i++ {
-            r.appendIPv4(byte(i) + minIP)
-        }
-    }
-    
-    // 移动到下一个CIDR
-    r.firstIP[14]++
-    if r.firstIP[14] == 0 {
-        r.firstIP[13]++
-        if r.firstIP[13] == 0 {
-            r.firstIP[12]++
-        }
-    }
-}
-
-// 选择IPv6
-func (r *IPRanges) chooseIPv6() {
-    if r.mask == "/128" {
-        r.appendIP(r.firstIP)
-        return
-    }
-    
-    // 计算最大测试数量
-    maxIPs := 1 << 8 // 默认测试 256 个 IPv6
-    if v6MaxCount > 0 {
-        maxIPs = v6MaxCount
-    } else {
-        switch {
-        case TestMore6:
-            maxIPs = 1 << 18 // 262144
-        case TestLots6:
-            maxIPs = 1 << 16 // 65536
-        case TestMany6:
-            maxIPs = 1 << 12 // 4096
-        case TestSome6:
-            maxIPs = 1 << 8  // 256
-        }
-    }
-    
-    count := 0
-    ipSet := make(map[string]bool)
-    
-    // 随机生成不重复的IPv6地址直到达到数量限制
-    for count < maxIPs && r.ipNet.Contains(r.firstIP) {
-        // 随机生成最后两段
-        r.firstIP[15] = randIPEndWith(255)
-        r.firstIP[14] = randIPEndWith(255)
-        
-        // 生成完整IP并转为字符串用于去重
-        targetIP := make([]byte, len(r.firstIP))
-        copy(targetIP, r.firstIP)
-        ipStr := net.IP(targetIP).String()
-        
-        // 如果是新IP则添加
-        if !ipSet[ipStr] {
-            ipSet[ipStr] = true
-            r.appendIP(targetIP)
-            count++
-        }
-        
-        // 随机调整其他字节以生成新的IP
-        for i := 13; i >= 0; i-- {
-            tempIP := r.firstIP[i]
-            r.firstIP[i] += randIPEndWith(255)
-            if r.firstIP[i] >= tempIP {
-                break
-            }
-        }
-    }
-}
-
-func randIPEndWith(num byte) byte {
-    if num == 0 {
-        return byte(0)
-    }
-    return byte(rand.Intn(int(num)))
-}
-
-// 加载IP范围
-func loadIPRanges() []*net.IPAddr {
-    ranges := newIPRanges()
-    if IPText != "" {
-        IPs := strings.Split(IPText, ",")
-        for _, IP := range IPs {
-            IP = strings.TrimSpace(IP)
-            if IP == "" {
-                continue
-            }
-            ranges.parseCIDR(IP)
-            if isIPv4(IP) {
-                ranges.chooseIPv4()
-            } else {
-                ranges.chooseIPv6()
-            }
-        }
-    } else {
-        if IPFile == "" {
-            IPFile = "ip.txt"
-        }
-        file, err := os.Open(IPFile)
-        if err != nil {
-            log.Fatal(err)
-        }
-        defer file.Close()
-        scanner := bufio.NewScanner(file)
-        for scanner.Scan() {
-            line := strings.TrimSpace(scanner.Text())
-            if line == "" {
-                continue
-            }
-            ranges.parseCIDR(line)
-            if isIPv4(line) {
-                ranges.chooseIPv4()
-            } else {
-                ranges.chooseIPv6()
-            }
-        }
-    }
-    
-    // 如果 IP 总数超过限制,随机选择
-    if len(ranges.ips) > maxTotalIPs {
-        rand.Shuffle(len(ranges.ips), func(i, j int) {
-            ranges.ips[i], ranges.ips[j] = ranges.ips[j], ranges.ips[i]
-        })
-        ranges.ips = ranges.ips[:maxTotalIPs]
-    }
-    
-    return ranges.ips
-}
-
-// Ping结构体
-type Ping struct {
-    wg      *sync.WaitGroup
-    m       *sync.Mutex
-    ips     []*net.IPAddr
-    csv     PingDelaySet
-    control chan bool
-    bar     *Bar
-}
-
-// 延迟丢包排序
-type PingDelaySet []CloudflareIPData
-
-func (s PingDelaySet) Len() int {
-    return len(s)
-}
-
-func (s PingDelaySet) Less(i, j int) bool {
-    iRate, jRate := s[i].getLossRate(), s[j].getLossRate()
-    if iRate != jRate {
-        return iRate < jRate
-    }
-    
-    // 如果延迟差异在阈值内，则随机排序，避免结果集中在同一个CIDR
-    if abs(s[i].Delay - s[j].Delay) <= delayTolerance {
-        return rand.Float32() < 0.5
-    }
-    return s[i].Delay < s[j].Delay
-}
-
-func (s PingDelaySet) Swap(i, j int) {
-    s[i], s[j] = s[j], s[i]
-}
-
-// 下载速度排序
-type DownloadSpeedSet []CloudflareIPData
-
-func (s DownloadSpeedSet) Len() int {
-    return len(s)
-}
-
-func (s DownloadSpeedSet) Less(i, j int) bool {
-    return s[i].DownloadSpeed > s[j].DownloadSpeed
-}
-
-func (s DownloadSpeedSet) Swap(i, j int) {
-    s[i], s[j] = s[j], s[i]
-}
-
-// CloudflareIPData方法
-func (cf *CloudflareIPData) getLossRate() float32 {
-    if cf.lossRate == 0 {
-        pingLost := cf.Sended - cf.Received
-        cf.lossRate = float32(pingLost) / float32(cf.Sended)
-    }
-    return cf.lossRate
-}
-
-// Ping相关方法
-func NewPing() *Ping {
-    checkPingDefault()
-    ips := loadIPRanges()
-    return &Ping{
-        wg:      &sync.WaitGroup{},
-        m:       &sync.Mutex{},
-        ips:     ips,
-        csv:     make(PingDelaySet, 0),
-        control: make(chan bool, Routines),
-        bar:     NewBar(len(ips), "可用:", ""),
-    }
-}
-
-func (p *Ping) Run() PingDelaySet {
-    if len(p.ips) == 0 {
-        return p.csv
-    }
-    for _, ip := range p.ips {
-        p.wg.Add(1)
-        p.control <- false
-        go p.start(ip)
-    }
-    p.wg.Wait()
-    p.bar.Done()
-    sort.Sort(p.csv)
-    return p.csv
-}
-
-func (p *Ping) start(ip *net.IPAddr) {
-    defer p.wg.Done()
-    p.tcpingHandler(ip)
-    <-p.control
-}
-
-func (p *Ping) tcping(ip *net.IPAddr) (bool, time.Duration) {
-    startTime := time.Now()
-    var fullAddress string
-    if isIPv4(ip.String()) {
-        fullAddress = fmt.Sprintf("%s:%d", ip.String(), TCPPort)
-    } else {
-        fullAddress = fmt.Sprintf("[%s]:%d", ip.String(), TCPPort)
-    }
-    conn, err := net.DialTimeout("tcp", fullAddress, tcpConnectTimeout)
-    if err != nil {
-        return false, 0
-    }
-    defer conn.Close()
-    duration := time.Since(startTime)
-    return true, duration
-}
-
-// HTTPing相关
-func (p *Ping) httping(ip *net.IPAddr) (int, time.Duration) {
-    hc := http.Client{
-        Timeout: time.Second * 2,
-        Transport: &http.Transport{
-            DialContext: getDialContext(ip),
-        },
-        CheckRedirect: func(req *http.Request, via []*http.Request) error {
-            return http.ErrUseLastResponse
-        },
-    }
-
-    // 先访问一次获得状态码和Colo信息
-    {
-        requ, err := http.NewRequest(http.MethodHead, URL, nil)
-        if err != nil {
-            return 0, 0
-        }
-        requ.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.80 Safari/537.36")
-        resp, err := hc.Do(requ)
-        if err != nil {
-            return 0, 0
-        }
-        defer resp.Body.Close()
-
-        if HttpingStatusCode == 0 || HttpingStatusCode < 100 && HttpingStatusCode > 599 {
-            if resp.StatusCode != 200 && resp.StatusCode != 301 && resp.StatusCode != 302 {
-                return 0, 0
-            }
-        } else {
-            if resp.StatusCode != HttpingStatusCode {
-                return 0, 0
-            }
-        }
-
-        io.Copy(io.Discard, resp.Body)
-
-        if HttpingCFColo != "" {
-            cfRay := func() string {
-                if resp.Header.Get("Server") == "cloudflare" {
-                    return resp.Header.Get("CF-RAY")
-                }
-                return resp.Header.Get("x-amz-cf-pop")
-            }()
-            colo := p.getColo(cfRay)
-            if colo == "" {
-                return 0, 0
-            }
-        }
-    }
-
-    // 循环测速计算延迟
-    success := 0
-    var delay time.Duration
-    for i := 0; i < PingTimes; i++ {
-        requ, err := http.NewRequest(http.MethodHead, URL, nil)
-        if err != nil {
-            log.Fatal("意外的错误，请报告：", err)
-            return 0, 0
-        }
-        requ.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.80 Safari/537.36")
-        if i == PingTimes-1 {
-            requ.Header.Set("Connection", "close")
-        }
-        startTime := time.Now()
-        resp, err := hc.Do(requ)
-        if err != nil {
-            continue
-        }
-        success++
-        io.Copy(io.Discard, resp.Body)
-        _ = resp.Body.Close()
-        duration := time.Since(startTime)
-        delay += duration
-    }
-
-    return success, delay
-}
-
-// 下载测速相关
-func getDialContext(ip *net.IPAddr) func(ctx context.Context, network, address string) (net.Conn, error) {
-    var fakeSourceAddr string
-    if isIPv4(ip.String()) {
-        fakeSourceAddr = fmt.Sprintf("%s:%d", ip.String(), TCPPort)
-    } else {
-        fakeSourceAddr = fmt.Sprintf("[%s]:%d", ip.String(), TCPPort)
-    }
-    return func(ctx context.Context, network, address string) (net.Conn, error) {
-        return (&net.Dialer{}).DialContext(ctx, network, fakeSourceAddr)
-    }
-}
-
-// 添加一个结构来跟踪所有IP的实时速度
-type SpeedTracker struct {
-    speeds map[string]float64
-    mu     sync.Mutex
-}
-
-func NewSpeedTracker() *SpeedTracker {
-    return &SpeedTracker{
-        speeds: make(map[string]float64),
-    }
-}
-
-func (st *SpeedTracker) UpdateSpeed(ip string, speed float64) {
-    st.mu.Lock()
-    st.speeds[ip] = speed
-    st.mu.Unlock()
-}
-
-func (st *SpeedTracker) RemoveIP(ip string) {
-    st.mu.Lock()
-    delete(st.speeds, ip)
-    st.mu.Unlock()
-}
-
-func (st *SpeedTracker) GetTotalSpeed() float64 {
-    st.mu.Lock()
-    defer st.mu.Unlock()
-    var total float64
-    for _, speed := range st.speeds {
-        total += speed
-    }
-    return total
-}
-
-func downloadHandler(ip *net.IPAddr, bar *Bar, st *SpeedTracker) float64 {
-    client := &http.Client{
-        Transport: &http.Transport{DialContext: getDialContext(ip)},
-        Timeout:   Timeout,
-        CheckRedirect: func(req *http.Request, via []*http.Request) error {
-            if len(via) > 10 {
-                return http.ErrUseLastResponse
-            }
-            if req.Header.Get("Referer") == URL {
-                req.Header.Del("Referer")
-            }
-            return nil
-        },
-    }
-    req, err := http.NewRequest("GET", URL, nil)
-    if err != nil {
-        return 0.0
-    }
-
-    req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.80 Safari/537.36")
-
-    response, err := client.Do(req)
-    if err != nil {
-        return 0.0
-    }
-    defer response.Body.Close()
-    if response.StatusCode != 200 {
-        return 0.0
-    }
-
-    contentLength := response.ContentLength
-    buffer := make([]byte, 1024)
-
-    var (
-        contentRead     int64 = 0
-        timeSlice             = time.Second // 每秒更新一次速度
-        lastContentRead int64 = 0
-        currentSpeed    float64
-    )
-
-    // 计算实时速度
-    go func() {
-        for {
-            time.Sleep(timeSlice)
-            currentSpeed = float64(contentRead-lastContentRead) / timeSlice.Seconds()
-            lastContentRead = contentRead
-            
-            // 更新这个IP的速度
-            st.UpdateSpeed(ip.String(), currentSpeed)
-            
-            // 获取所有IP的总带宽
-            totalSpeed := st.GetTotalSpeed()
-            
-            // 更新进度条显示的总带宽 (转换为MB/s)
-            bar.message = fmt.Sprintf("%.2f", totalSpeed/1024/1024)
-            
-            if contentRead >= contentLength {
-                st.RemoveIP(ip.String())
-                break
-            }
-        }
-    }()
-
-    // 下载过程
-    for contentLength != contentRead {
-        bufferRead, err := response.Body.Read(buffer)
-        if err != nil {
-            break
-        }
-        contentRead += int64(bufferRead)
-    }
-
-    return currentSpeed
-}
-
-// 延迟条件过滤
-func (s PingDelaySet) FilterDelay() (data PingDelaySet) {
-    if InputMaxDelay > 9999*time.Millisecond || InputMinDelay < 0 {
-        return s
-    }
-    if InputMaxDelay == 9999*time.Millisecond && InputMinDelay == 0 {
-        return s
-    }
-    for _, v := range s {
-        if v.Delay > InputMaxDelay {
-            break
-        }
-        if v.Delay < InputMinDelay {
-            continue
-        }
-        data = append(data, v)
-    }
-    return
-}
-
-// 丢包条件过滤
-func (s PingDelaySet) FilterLossRate() (data PingDelaySet) {
-    if InputMaxLossRate >= 1 {
-        return s
-    }
-    for _, v := range s {
-        if v.getLossRate() > InputMaxLossRate {
-            break
-        }
-        data = append(data, v)
-    }
-    return
-}
-
-// 测速结果输出
-func (s DownloadSpeedSet) Print() {
-    if PrintNum == 0 {
-        return
-    }
-    if len(s) <= 0 {
-        printInfo("\n完整测速结果 IP 数量为 0，跳过输出结果。")
-        return
-    }
-    
-    // 表头
-    headers := []string{"IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)", "数据中心"}
-    headerRow := ""
-    for _, h := range headers {
-        headerRow += headerStyle.Render(h)
-    }
-    fmt.Println(headerRow)
-
-    // 数据行
-    dateString := convertToString(s)
-    if len(dateString) < PrintNum {
-        PrintNum = len(dateString)
-    }
-    
-    for i := 0; i < PrintNum; i++ {
-        row := ""
-        for _, field := range dateString[i] {
-            row += dataStyle.Render(fmt.Sprintf("%-15s", field))
-        }
-        fmt.Println(row)
-    }
-
-    if Output != "" && Output != " " {
-        printInfo("\n完整测速结果已写入 %v 文件，可使用记事本/表格软件查看。\n", Output)
-    }
-}
-
-func convertToString(data []CloudflareIPData) [][]string {
-    result := make([][]string, 0)
-    for _, v := range data {
-        result = append(result, v.toString())
-    }
-    return result
-}
-
-// 导出结果到CSV文件
-func ExportCsv(data []CloudflareIPData) {
-    if noOutput() || len(data) == 0 {
-        return
-    }
-    fp, err := os.Create(Output)
-    if err != nil {
-        log.Fatalf("创建文件[%s]失败：%v", Output, err)
-        return
-    }
-    defer fp.Close()
-    w := csv.NewWriter(fp)
-    _ = w.Write([]string{"IP 地址", "已发送", "已接收", "丢包率", "平均延迟", "下载速度 (MB/s)", "数据中心"})
-    _ = w.WriteAll(convertToString(data))
-    w.Flush()
-}
-
-// 检查更新
-func checkUpdate() {
-    timeout := 10 * time.Second
-    client := http.Client{Timeout: timeout}
-    res, err := client.Get("https://api.xiu2.xyz/ver/cloudflarespeedtest.txt")
-    if err != nil {
-        return
-    }
-    body, err := io.ReadAll(res.Body)
-    if err != nil {
-        return
-    }
-    defer res.Body.Close()
-    if string(body) != version {
-        versionNew = string(body)
-    }
-}
-
-// 初始化参数
 func init() {
-    var printVersion bool
-    var help = `
+	var printVersion bool
+	var help = `
 CloudflareSpeedTest ` + version + `
 测试 Cloudflare CDN 所有 IP 的延迟和速度，获取最快 IP (IPv4+IPv6)！
 https://github.com/XIU2/CloudflareSpeedTest
@@ -952,505 +68,153 @@ https://github.com/XIU2/CloudflareSpeedTest
     -all4
         测速全部的 IPv4；(IPv4 默认每 /24 段随机测速一个 IP)
     -more6
-        测试更多 IPv6；(表示 -v6 18，即每个 CIDR 最多测速 2^18 即 262144 个)
+        测试更多 IPv6；(表示 -v6 18，即每个 CIDR 测速 2^18 即 262144 个)
     -lots6
-        测试较多 IPv6；(表示 -v6 16，即每个 CIDR 最多测速 2^16 即 65536 个)
+        测试较多 IPv6；(表示 -v6 16，即每个 CIDR 测速 2^16 即 65536 个)
     -many6
-        测试很多 IPv6；(表示 -v6 12，即每个 CIDR 最多测速 2^12 即 4096 个)
+        测试很多 IPv6；(表示 -v6 12，即每个 CIDR 测速 2^12 即 4096 个)
     -some6
-        测试一些 IPv6；(表示 -v6 8，即每个 CIDR 最多测速 2^8 即 256 个)
+        测试一些 IPv6；(表示 -v6 8，即每个 CIDR 测 2^8 即 256 个)
     -many4
-        测试一点 IPv4；(表示 -v4 12，即每个 CIDR 最多测速 2^12 即 4096 个)
+        测试一点 IPv4；(表示 -v4 12，即每个 CIDR 测速 2^12 即 4096 个)
 
     -v4
-        指定 IPv4 测试数量 (2^n±m，例如 -v4 0+12 表示 2^0+12 即每个 CIDR 最多测速 13 个)
+        指定 IPv4 测试数量 (2^n±m，例如 -v4 0+12 表示 2^0+12 即每个 CIDR 测速 13 个)
     -v6
-        指定 IPv6 测试数量 (2^n±m，例如 -v6 18-6 表示 2^18-6 即每个 CIDR 最多测速 262138 个)
+        指定 IPv6 测试数量 (2^n±m，例如 -v6 18-6 表示 2^18-6 即每个 CIDR 测速 262138 个)
 
     -v
         打印程序版本 + 检查版本更新
     -h
         打印帮助说明
 `
-    var minDelay, maxDelay, downloadTime int
-    var maxLossRate float64
-    
-    // 添加所有命令行参数
-    flag.IntVar(&Routines, "n", 200, "延迟测速线程数")
-    flag.IntVar(&PingTimes, "t", 4, "延迟测速次数")
-    flag.IntVar(&TestCount, "dn", 10, "下载测速数量")
-    flag.IntVar(&downloadTime, "dt", 10, "下载测速时间")
-    flag.IntVar(&TCPPort, "tp", 443, "指定测速端口")
-    flag.StringVar(&URL, "url", defaultURL, "指定测速地址")
-    
-    flag.BoolVar(&Httping, "httping", false, "切换测速模式")
-    flag.IntVar(&HttpingStatusCode, "httping-code", 0, "有效状态代码")
-    flag.StringVar(&HttpingCFColo, "cfcolo", "", "匹配指定地区")
-    
-    flag.IntVar(&maxDelay, "tl", 9999, "平均延迟上限")
-    flag.IntVar(&minDelay, "tll", 0, "平均延迟下限")
-    flag.Float64Var(&maxLossRate, "tlr", 1, "丢包几率上限")
-    flag.Float64Var(&MinSpeed, "sl", 0, "下载速度下限")
-    
-    flag.IntVar(&PrintNum, "p", 10, "显示结果数量")
-    flag.StringVar(&IPFile, "f", "ip.txt", "IP段数据文件")
-    flag.StringVar(&IPText, "ip", "", "指定IP段数据")
-    flag.StringVar(&Output, "o", "result.csv", "输出结果文件")
-    
-    flag.BoolVar(&Disable, "dd", false, "禁用下载测速")
-    flag.BoolVar(&TestAll, "all4", false, "测速全部的IPv4(默认 每个 /24 段随机测速一个 IP)")
-    
-    // 添加新的IPv6相关参数
-    flag.BoolVar(&TestMore6, "more6", false, "测试更多 IPv6")
-    flag.BoolVar(&TestLots6, "lots6", false, "测试较多 IPv6")
-    flag.BoolVar(&TestMany6, "many6", false, "测试很多 IPv6")
-    flag.BoolVar(&TestSome6, "some6", false, "测试一些 IPv6")
-    flag.BoolVar(&TestMany4, "many4", false, "测试一点 IPv4")
-    
-    // 添加版本参数
-    flag.BoolVar(&printVersion, "v", false, "打印程序版本")
-    
-    // 设置帮助信息
-    flag.Usage = func() { fmt.Print(help) }
-    
-    // 解析命令行参数
-    flag.Parse()
-    
-    checkDownloadDefault()
-    
-    if printVersion {
-        println(version)
-        fmt.Println("检查版本更新中...")
-        checkUpdate()
-        if versionNew != "" {
-            fmt.Printf("发现新版本 [%s]！请前往 [https://github.com/XIU2/CloudflareSpeedTest] 更新！", versionNew)
-        } else {
-            fmt.Println("当前为最新版本 [" + version + "]！")
-        }
-        os.Exit(0)
-    }
+	var minDelay, maxDelay, downloadTime int
+	var maxLossRate float64
+	flag.IntVar(&task.Routines, "n", 200, "延迟测速线程")
+	flag.IntVar(&task.PingTimes, "t", 4, "延迟测速次数")
+	flag.IntVar(&task.TestCount, "dn", 10, "下载测速数量")
+	flag.IntVar(&downloadTime, "dt", 10, "下载测速时间")
+	flag.IntVar(&task.TCPPort, "tp", 443, "指定测速端口")
+	flag.StringVar(&task.URL, "url", "https://cf.xiu2.xyz/url", "指定测速地址")
 
-    if MinSpeed > 0 && time.Duration(maxDelay)*time.Millisecond == InputMaxDelay {
-        fmt.Println("[小提示] 在使用 [-sl] 参数时，建议搭配 [-tl] 参数，以避免因凑不够 [-dn] 数量而一直测速...")
-    }
-    
-    InputMaxDelay = time.Duration(maxDelay) * time.Millisecond
-    InputMinDelay = time.Duration(minDelay) * time.Millisecond
-    InputMaxLossRate = float32(maxLossRate)
-    Timeout = time.Duration(downloadTime) * time.Second
-    HttpingCFColomap = MapColoMap()
+	flag.BoolVar(&task.Httping, "httping", false, "切换测速模式")
+	flag.IntVar(&task.HttpingStatusCode, "httping-code", 0, "有效状态代码")
+	flag.StringVar(&task.HttpingCFColo, "cfcolo", "", "匹配指定地区")
 
-    if Routines > maxRoutine {
-        Routines = maxRoutine
-    }
+	flag.IntVar(&maxDelay, "tl", 9999, "平均延迟上限")
+	flag.IntVar(&minDelay, "tll", 0, "平均延迟下限")
+	flag.Float64Var(&maxLossRate, "tlr", 1, "丢包几率上限")
+	flag.Float64Var(&task.MinSpeed, "sl", 0, "下载速度下限")
 
-    // 修改终端颜色支持检测部分
-    if !term.IsTerminal(int(os.Stdout.Fd())) {
-        // 不支持时禁用颜色 - 通过设置所有样式为无色
-        titleStyle = titleStyle.UnsetForeground()
-        subtitleStyle = subtitleStyle.UnsetForeground()
-        infoStyle = infoStyle.UnsetForeground()
-        warnStyle = warnStyle.UnsetForeground()
-        errorStyle = errorStyle.UnsetForeground()
-        headerStyle = headerStyle.UnsetForeground()
-        dataStyle = dataStyle.UnsetForeground()
-        versionStyle = versionStyle.UnsetForeground()
-    }
+	flag.IntVar(&utils.PrintNum, "p", 10, "显示结果数量")
+	flag.StringVar(&task.IPFile, "f", "ip.txt", "IP段数据文件")
+	flag.StringVar(&task.IPText, "ip", "", "指定IP段数据")
+	flag.StringVar(&utils.Output, "o", "result.csv", "输出结果文件")
 
-    // 解析 v4/v6 参数
-    parseVParam(v4Param, &v4Power, &v4Adjust, maxV4Power)
-    parseVParam(v6Param, &v6Power, &v6Adjust, maxV6Power)
-    
-    // 解析 v4/v6 参数后计算最终测试数量
-    calculateMaxCount()
+	flag.BoolVar(&task.Disable, "dd", false, "禁用下载测速")
+	flag.BoolVar(&task.TestAll, "all4", false, "测速全部 IP")
+
+	flag.BoolVar(&printVersion, "v", false, "打印程序版本")
+	flag.Usage = func() { fmt.Print(help) }
+	flag.Parse()
+
+	if task.MinSpeed > 0 && time.Duration(maxDelay)*time.Millisecond == utils.InputMaxDelay {
+		fmt.Println("[小提示] 在使用 [-sl] 参数时，建议搭配 [-tl] 参数，以避免因凑不够 [-dn] 数量而一直测速...")
+	}
+	utils.InputMaxDelay = time.Duration(maxDelay) * time.Millisecond
+	utils.InputMinDelay = time.Duration(minDelay) * time.Millisecond
+	utils.InputMaxLossRate = float32(maxLossRate)
+	task.Timeout = time.Duration(downloadTime) * time.Second
+	task.HttpingCFColomap = task.MapColoMap()
+
+	if printVersion {
+		println(version)
+		fmt.Println("检查版本更新中...")
+		checkUpdate()
+		if versionNew != "" {
+			fmt.Printf("*** 发现新版本 [%s]！请前往 [https://github.com/XIU2/CloudflareSpeedTest] 更新！ ***", versionNew)
+		} else {
+			fmt.Println("当前为最新版本 [" + version + "]！")
+		}
+		os.Exit(0)
+	}
+
+	// 添加新的命令行参数
+	flag.BoolVar(&task.TestAll4, "all4", false, "测速全部的 IPv4")
+	flag.BoolVar(&task.More6, "more6", false, "测试更多 IPv6 (2^18 个)")
+	flag.BoolVar(&task.Lots6, "lots6", false, "测试较多 IPv6 (2^16 个)")
+	flag.BoolVar(&task.Many6, "many6", false, "测试很多 IPv6 (2^12 个)")
+	flag.BoolVar(&task.Some6, "some6", false, "测试一些 IPv6 (2^8 个)")
+	flag.BoolVar(&task.Many4, "many4", false, "测试一点 IPv4 (2^12 个)")
+	
+	var v4TestNum, v6TestNum string
+	flag.StringVar(&v4TestNum, "v4", "", "指定 IPv4 测试数量")
+	flag.StringVar(&v6TestNum, "v6", "", "指定 IPv6 测试数量")
+	
+	// 在 flag.Parse() 后处理测试数量，从多到少排序
+	if v4TestNum != "" { // 自定义数量优先级最高
+		task.IPv4TestNum = task.ParseTestNum(v4TestNum)
+	} else if task.Many4 { // -many4 次之
+		task.IPv4TestNum = 4096 // 2^12
+	}
+
+	if v6TestNum != "" { // 自定义数量优先级最高
+		task.IPv6TestNum = task.ParseTestNum(v6TestNum)
+	} else if task.Some6 { // -some6 优先级最高
+		task.IPv6TestNum = 256 // 2^8
+	} else if task.Many6 { // -many6 次之
+		task.IPv6TestNum = 4096 // 2^12
+	} else if task.Lots6 { // -lots6 再次之
+		task.IPv6TestNum = 65536 // 2^16
+	} else if task.More6 { // -more6 优先级最低
+		task.IPv6TestNum = 262144 // 2^18
+	}
 }
 
 func main() {
-    InitRandSeed()
+	task.InitRandSeed() // 置随机数种子
 
-    // 美化标题
-    printTitle("CloudflareSpeedTest %s", version)
-    fmt.Println()
+	fmt.Printf("# XIU2/CloudflareSpeedTest %s \n\n", version)
 
-    // 开始延迟测速
-    mode := "TCP"
-    if Httping {
-        mode = "HTTP"
-    }
-    printSubtitle("开始延迟测速（模式：%s, 端口：%d, 范围：%v ~ %v ms, 丢包：%.2f）", 
-        mode,
-        TCPPort,
-        InputMinDelay.Milliseconds(),
-        InputMaxDelay.Milliseconds(),
-        InputMaxLossRate,
-    )
-    
-    pingData := NewPing().Run().FilterDelay().FilterLossRate()
-    
-    // 开始下载测速
-    printSubtitle("\n开始下载测速（下限：%.2f MB/s, 数量：%d, 队列：%d）",
-        MinSpeed,
-        TestCount,
-        len(pingData),
-    )
-    
-    speedData := TestDownloadSpeed(pingData)
-    
-    // 输出结果
-    ExportCsv(speedData)
-    speedData.Print()
+	// 开始延迟测速 + 过滤延迟/丢包
+	pingData := task.NewPing().Run().FilterDelay().FilterLossRate()
+	// 开始下载测速
+	speedData := task.TestDownloadSpeed(pingData)
+	utils.ExportCsv(speedData) // 输出文件
+	speedData.Print()          // 打印结果
 
-    // 版本更新提示
-    if versionNew != "" {
-        printWarn("\n发现新版本 [%s]！请前往 https://github.com/XIU2/CloudflareSpeedTest 更新！", versionNew)
-    }
-    
-    endPrint()
-}
-
-func checkPingDefault() {
-    if Routines <= 0 {
-        Routines = defaultRoutines
-    } else if Routines > maxRoutine {
-        Routines = maxRoutine
-    }
-    if TCPPort <= 0 || TCPPort >= 65535 {
-        TCPPort = defaultPort
-    }
-    if PingTimes <= 0 {
-        PingTimes = defaultPingTimes
-    }
-}
-
-func (p *Ping) tcpingHandler(ip *net.IPAddr) {
-    recv, totalDelay := p.checkConnection(ip)
-    nowAble := len(p.csv)
-    if recv != 0 {
-        nowAble++
-    }
-    p.bar.Grow(1, strconv.Itoa(nowAble))
-    if recv == 0 {
-        return
-    }
-
-    // 获取数据中心代码
-    var colo string
-    if !Httping { // 只在非 Httping 模式下额外获取数据中心代码
-        // 复用 httping 方法来获取数据中心代码
-        if hrecv, _ := p.httping(ip); hrecv > 0 {
-            // 数据中心代码会在 httping 方法中通过 CF-RAY 或 x-amz-cf-pop 获取
-            // 不需要在这里重复获取
-        }
-    }
-
-    // 如果获取失败，仍然添加 IP 数据，但数据中心代码为空
-    data := &PingData{
-        IP:       ip,
-        Sended:   PingTimes,
-        Received: recv,
-        Delay:    totalDelay / time.Duration(recv),
-    }
-    p.appendIPData(&CloudflareIPData{
-        PingData: data,
-        colo:     colo,
-    })
-}
-
-func (p *Ping) appendIPData(data *CloudflareIPData) {
-    p.m.Lock()
-    defer p.m.Unlock()
-    p.csv = append(p.csv, *data)
-}
-
-func (p *Ping) checkConnection(ip *net.IPAddr) (recv int, totalDelay time.Duration) {
-    if Httping {
-        recv, totalDelay = p.httping(ip)
-        return
-    }
-    for i := 0; i < PingTimes; i++ {
-        if ok, delay := p.tcping(ip); ok {
-            recv++
-            totalDelay += delay
-        }
-    }
-    return
-}
-
-// 添加辅助函数计算时间差的绝对值
-func abs(d time.Duration) time.Duration {
-    if d < 0 {
-        return -d
-    }
-    return d
-}
-
-// 修改 TestDownloadSpeed 函数，对延迟相近的IP分组打乱
-func TestDownloadSpeed(ipSet PingDelaySet) (speedSet DownloadSpeedSet) {
-    checkDownloadDefault()
-    if Disable {
-        return DownloadSpeedSet(ipSet)
-    }
-    if len(ipSet) <= 0 {
-        fmt.Println("\n[信息] 延迟测速结果 IP 数量为 0，跳过下载测速。")
-        return
-    }
-    
-    // 将延迟相近的IP分组
-    groups := make([][]CloudflareIPData, 0)
-    currentGroup := []CloudflareIPData{ipSet[0]}
-    
-    for i := 1; i < len(ipSet); i++ {
-        if abs(ipSet[i].Delay - ipSet[i-1].Delay) <= delayTolerance {
-            // 延迟相近，加入当前组
-            currentGroup = append(currentGroup, ipSet[i])
-        } else {
-            // 延迟差异较大，创建新组
-            if len(currentGroup) > 0 {
-                groups = append(groups, currentGroup)
-            }
-            currentGroup = []CloudflareIPData{ipSet[i]}
-        }
-    }
-    // 添加最后一组
-    if len(currentGroup) > 0 {
-        groups = append(groups, currentGroup)
-    }
-    
-    // 对每组内的IP随机打乱
-    for i := range groups {
-        rand.Shuffle(len(groups[i]), func(j, k int) {
-            groups[i][j], groups[i][k] = groups[i][k], groups[i][j]
-        })
-    }
-    
-    // 重新组合所有IP
-    shuffledIPs := make([]CloudflareIPData, 0, len(ipSet))
-    for _, group := range groups {
-        shuffledIPs = append(shuffledIPs, group...)
-    }
-    
-    // 开始下载测速
-    testNum := TestCount
-    if len(shuffledIPs) < TestCount || MinSpeed > 0 {
-        testNum = len(shuffledIPs)
-    }
-    if testNum < TestCount {
-        TestCount = testNum
-    }
-
-    fmt.Printf("\n开始下载测速（下限：%.2f MB/s, 数量：%d, 队列：%d）\n", MinSpeed, TestCount, testNum)
-    bar := NewBar(TestCount, "", "")
-    speedTracker := NewSpeedTracker()
-    
-    for i := 0; i < testNum; i++ {
-        speed := downloadHandler(shuffledIPs[i].IP, bar, speedTracker)
-        shuffledIPs[i].DownloadSpeed = speed
-        if speed >= MinSpeed*1024*1024 {
-            speedSet = append(speedSet, shuffledIPs[i])
-            // 更新进度条,显示实时总带宽
-            bar.Grow(1, fmt.Sprintf("%.2f", speedTracker.GetTotalSpeed()/1024/1024))
-            if len(speedSet) == TestCount {
-                break
-            }
-        }
-    }
-    
-    bar.Done()
-    if len(speedSet) == 0 {
-        speedSet = DownloadSpeedSet(shuffledIPs)
-    }
-    sort.Sort(speedSet)
-    return
-}
-
-var OutRegexp = regexp.MustCompile(`[A-Z]{3}`)
-
-func MapColoMap() *sync.Map {
-    if HttpingCFColo == "" {
-        return nil
-    }
-    colos := strings.Split(strings.ToUpper(HttpingCFColo), ",")
-    colomap := &sync.Map{}
-    for _, colo := range colos {
-        colomap.Store(colo, colo)
-    }
-    return colomap
-}
-
-func (p *Ping) getColo(b string) string {
-    if b == "" {
-        return ""
-    }
-    out := OutRegexp.FindString(b)
-    if HttpingCFColomap == nil {
-        return out
-    }
-    _, ok := HttpingCFColomap.Load(out)
-    if ok {
-        return out
-    }
-    return ""
-}
-
-// CloudflareIPData 的 toString 方法
-func (cf *CloudflareIPData) toString() []string {
-    result := make([]string, 7)
-    result[0] = cf.IP.String()
-    result[1] = strconv.Itoa(cf.Sended)
-    result[2] = strconv.Itoa(cf.Received)
-    result[3] = strconv.FormatFloat(float64(cf.getLossRate()), 'f', 2, 32)
-    result[4] = strconv.FormatFloat(cf.Delay.Seconds()*1000, 'f', 2, 32)
-    result[5] = strconv.FormatFloat(cf.DownloadSpeed/1024/1024, 'f', 2, 32)
-    result[6] = cf.colo
-    return result
-}
-
-// 是否打印测试结果
-func NoPrintResult() bool {
-    return PrintNum == 0
-}
-
-// 是否输出到文件
-func noOutput() bool {
-    return Output == "" || Output == " "
+	if versionNew != "" {
+		fmt.Printf("\n*** 发现新版本 [%s]！请前往 [https://github.com/XIU2/CloudflareSpeedTest] 更新！ ***\n", versionNew)
+	}
+	endPrint()
 }
 
 func endPrint() {
-    if NoPrintResult() {
-        return
-    }
-    if runtime.GOOS == "windows" {
-        fmt.Printf("按下 回车键 或 Ctrl+C 退出。")
-        fmt.Scanln()
-    }
+	if utils.NoPrintResult() {
+		return
+	}
+	if runtime.GOOS == "windows" { // 如果是 Windows 系统，则需要按下 回车键 或 Ctrl+C 退出（避免通过双击运行时，测速完毕后直接关闭）
+		fmt.Printf("按下 回车键 或 Ctrl+C 退出。")
+		fmt.Scanln()
+	}
 }
 
-const (
-    tcpConnectTimeout = time.Second * 1
-    maxRoutine        = 1000
-    defaultRoutines   = 200
-    defaultPort       = 443
-    defaultPingTimes  = 4
-    bufferSize        = 1024
-    defaultURL        = "https://cf.xiu2.xyz/url"
-    defaultTimeout    = 10 * time.Second
-    defaultDisableDownload = false
-    defaultTestNum    = 10
-    defaultMinSpeed   float64 = 0.0
-)
-func checkDownloadDefault() {
-    if URL == "" {
-        URL = defaultURL
-    }
-    if Timeout <= 0 {
-        Timeout = defaultTimeout
-    }
-    if TestCount <= 0 {
-        TestCount = defaultTestNum
-    }
-    if MinSpeed <= 0.0 {
-        MinSpeed = defaultMinSpeed
-    }
-}
-
-// 解析 2^n±m 格式的参数
-func parseVParam(param string, power, adjust *int, maxPower int) {
-    if param == "" {
-        return
-    }
-    
-    parts := strings.Split(param, "+")
-    if len(parts) == 2 {
-        *power, _ = strconv.Atoi(parts[0])
-        *adjust, _ = strconv.Atoi(parts[1])
-    } else {
-        parts = strings.Split(param, "-")
-        if len(parts) == 2 {
-            *power, _ = strconv.Atoi(parts[0])
-            adj, _ := strconv.Atoi(parts[1])
-            *adjust = -adj
-        } else {
-            *power, _ = strconv.Atoi(param)
-        }
-    }
-    
-    // 检查是否超过最大值
-    if *power > maxPower {
-        *power = maxPower
-    }
-}
-
-// 添加计算最终测试数量的函数
-func calculateMaxCount() {
-    // 计算 IPv4 最大测试数量
-    v4Counts := make([]int, 0)
-    
-    // 添加 -all4 的数量
-    if TestAll {
-        v4Counts = append(v4Counts, maxTotalIPs) // 使用预定义的最大IP数量
-    }
-    
-    // 添加 -many4 的数量 (2^12)
-    if TestMany4 {
-        v4Counts = append(v4Counts, 1<<12)
-    }
-    
-    // 添加 -v4 参数的数量
-    if v4Power > 0 {
-        count := 1 << v4Power
-        if v4Adjust > 0 {
-            count += v4Adjust
-        } else {
-            count -= -v4Adjust
-        }
-        v4Counts = append(v4Counts, count)
-    }
-    
-    // 如果有任何 IPv4 相关参数，取最小值
-    if len(v4Counts) > 0 {
-        v4MaxCount = v4Counts[0]
-        for _, count := range v4Counts {
-            if count < v4MaxCount {
-                v4MaxCount = count
-            }
-        }
-    }
-
-    // 计算 IPv6 最大测试数量
-    v6Counts := make([]int, 0)
-    
-    // 添加各种 IPv6 参数的数量
-    if TestMore6 {
-        v6Counts = append(v6Counts, 1<<18) // 2^18
-    }
-    if TestLots6 {
-        v6Counts = append(v6Counts, 1<<16) // 2^16
-    }
-    if TestMany6 {
-        v6Counts = append(v6Counts, 1<<12) // 2^12
-    }
-    if TestSome6 {
-        v6Counts = append(v6Counts, 1<<8)  // 2^8
-    }
-    
-    // 添加 -v6 参数的数量
-    if v6Power > 0 {
-        count := 1 << v6Power
-        if v6Adjust > 0 {
-            count += v6Adjust
-        } else {
-            count -= -v6Adjust
-        }
-        v6Counts = append(v6Counts, count)
-    }
-    
-    // 如果有任何 IPv6 相关参数，取最小值
-    if len(v6Counts) > 0 {
-        v6MaxCount = v6Counts[0]
-        for _, count := range v6Counts {
-            if count < v6MaxCount {
-                v6MaxCount = count
-            }
-        }
-    }
+// 检查更新
+func checkUpdate() {
+	timeout := 10 * time.Second
+	client := http.Client{Timeout: timeout}
+	res, err := client.Get("https://api.xiu2.xyz/ver/cloudflarespeedtest.txt")
+	if err != nil {
+		return
+	}
+	// 读取资源数据 body: []byte
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return
+	}
+	// 关闭资源流
+	defer res.Body.Close()
+	if string(body) != version {
+		versionNew = string(body)
+	}
 }
