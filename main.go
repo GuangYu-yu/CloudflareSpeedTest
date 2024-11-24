@@ -195,7 +195,7 @@ func NewBar(count int, MyStrStart, MyStrEnd string) *Bar {
 	p := progress.New(
 		progress.WithGradient("#7571F9", "#9681EB"),
 		progress.WithWidth(40),
-		progress.WithAnimatedSpinner(),
+		progress.WithDefaultGradient(),
 	)
 	
 	return &Bar{
